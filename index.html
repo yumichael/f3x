@@ -772,7 +772,7 @@ function rebuildPath(){pathPoints=[];try{pathFn=compileExpr($('pathExpr').value)
 function pathZFor(k){if(!pathFn&&!rebuildPath())return getZ();const N=Math.max(1,parseInt($('pathN').value)||1),a=Number($('tStart').value),b=Number($('tEnd').value),den=$('endpoint').checked?Math.max(1,N-1):N,t=N===1?a:a+(b-a)*k/den;return pathFn({t,k,N})}
 function sampledIds(f,wantValue){const want=BigInt(Math.max(1,Math.floor(Number(wantValue)||1))),n=want<f.total?want:f.total,seed=Number($('seed').value)>>>0,perm=makePermuter(f.total,seed),len=Number(n>BigInt(Number.MAX_SAFE_INTEGER)?BigInt(Number.MAX_SAFE_INTEGER):n);if(n>1000000n&&f.total>4294967295n)toast('Very large sampled subsets with huge families may use substantial memory');if(f.total<=4294967295n){const a=new Uint32Array(len);for(let i=0;i<len;i++)a[i]=perm.at(i);return a}const a=new Array(len);for(let i=0;i<len;i++)a[i]=perm.at(BigInt(i));return a}
 function sequentialIds(f){const len=Number(f.total);if(f.total<=4294967295n){const a=new Uint32Array(len);for(let i=0;i<len;i++)a[i]=i;return a}const a=new Array(len);for(let i=0;i<len;i++)a[i]=BigInt(i);return a}
-function renderDirectFrame(ids,f,z,status){const frameStart=now();renderToken++;const backend=chooseBackend(f);activeBackend=backend;currentFamily=f;currentPerm=null;paused=false;renderedChunks=[ids];processed=ids.length;totalTarget=ids.length;currentSampled=BigInt(ids.length)<f.total;startTime=now();lastRateTime=startTime;lastRateCount=0;$('backendPill').textContent=$('renderStyle').value==='voronoi'?'Backend: CPU f64 sites + GPU Voronoi':`Backend: ${backend==='gpu'?'GPU f32 shader':pointBackendLabel()}`;if(glr)glr.clear();clearCPU();if(backend==='gpu'&&ids instanceof Uint32Array)glr.draw(ids,f,z,false);else cpuDraw(ids,f,z,false);updateHUD(status);$('rateLine').textContent=`${(now()-frameStart).toFixed(1)} ms CPU frame work · ${ids.length.toLocaleString()} members`}
+function renderDirectFrame(ids,f,z,status){const frameStart=now();renderToken++;const backend=chooseBackend(f);activeBackend=backend;currentFamily=f;currentPerm=null;paused=false;renderedChunks=[ids];processed=ids.length;totalTarget=ids.length;currentSampled=BigInt(ids.length)<f.total;startTime=now();lastRateTime=startTime;lastRateCount=0;$('backendPill').textContent=$('renderStyle').value==='voronoi'?'Backend: CPU f64 sites + GPU Voronoi':`Backend: ${backend==='gpu'?'GPU f32 shader':pointBackendLabel()}`;if(glr)glr.clear();clearCPU();if(backend==='gpu'&&ids instanceof Uint32Array)glr.draw(ids,f,z,false);else cpuDraw(ids,f,z,false);updateHUD(status);$('rateLine').textContent=`${(now()-frameStart).toFixed(1)} ms main-thread frame work · ${ids.length.toLocaleString()} members`}
 function scheduleCompleteAdvance(frameStarted){clearTimeout(completeAdvanceTimer);if(!animPlaying||animationUiPaused)return;const fps=Math.max(1,Number($('pathFps').value)||30),delay=Math.max(0,1000/fps-(now()-frameStarted));completeAdvanceTimer=setTimeout(()=>{if(animPlaying&&!animationUiPaused&&$('animMode').value==='path'&&$('pathRenderMode').value==='complete')advanceFrame(1)},delay)}
 
 function renderAnimationFrame(){clearTimeout(completeAdvanceTimer);const mode=$('animMode').value;if(mode==='path'){if(!pathFn&&!rebuildPath())return;const N=Math.max(1,parseInt($('pathN').value)||1);animFrame=clamp(animFrame,0,N-1);const z=pathZFor(animFrame);$('zRe').value=z.re;$('zIm').value=z.im;const last=trail.at(-1);if(!last||Math.hypot(last.re-z.re,last.im-z.im)>1e-12)trail.push(z);const tl=Math.max(1,parseInt($('trailLength').value)||40);if(trail.length>tl)trail.splice(0,trail.length-tl);drawOverlays();let f;try{f=makeFamily()}catch(e){toast(e.message);return}const rm=$('pathRenderMode').value,backend=chooseBackend(f),frameStarted=now();if(rm==='fixed'){if(!fixedIds)fixedIds=sampledIds(f,$('fixedSubset').value);renderDirectFrame(fixedIds,f,z,'Fixed subset frame')}else if(rm==='preview'){if(!previewIds)previewIds=sampledIds(f,$('previewBudget').value);renderDirectFrame(previewIds,f,z,'Realtime preview')}else if($('renderStyle').value==='points'){if(!completeIds)completeIds=sequentialIds(f);renderDirectFrame(completeIds,f,z,'Complete frame')}else{const DIRECT_CPU_LIMIT=100000n;if(backend==='gpu'||f.total<=DIRECT_CPU_LIMIT){if(!completeIds)completeIds=sequentialIds(f);renderDirectFrame(completeIds,f,z,'Complete frame');scheduleCompleteAdvance(frameStarted)}else{const old=$('renderAmount').value;$('renderAmount').value='all';requestRender(false,()=>scheduleCompleteAdvance(frameStarted));$('renderAmount').value=old;return}}}else if(mode==='degree'){const max=Math.max(0,parseInt($('sweepMax').value)||0);animFrame=clamp(animFrame,0,max);$('degree').value=animFrame;if($('sweepType').value==='current'){$('exactBtn').classList.add('active');$('upToBtn').classList.remove('active')}else{$('upToBtn').classList.add('active');$('exactBtn').classList.remove('active')}countForUI();requestRender(false)}}
@@ -897,28 +897,23 @@ function finishInteraction(warn=false){
     const frame=interactionFrame;
     if(!frame||frame.f!==f||frame.ids!==ids||frame.zr!==z.re||frame.zi!==z.im||frame.token!==renderToken)
       renderMovingPreview();
-    const token=++renderToken;paused=false;currentSampled=nBig<f.total;totalTarget=n;
+    renderToken++;paused=false;currentSampled=nBig<f.total;totalTarget=n;
     processed=ids.length;renderedChunks=[ids];startTime=lastRateTime=now();lastRateCount=processed;
-    if(!cache.completion||cache.completion.n!==n)cache.completion={n,chunks:[],perm:makePermuter(f.total,seed)};
-    const completion=cache.completion;let chunkIndex=0;
-    function done(){updateHUD(currentSampled?'Sample complete':'Complete');$('rateLine').textContent=processed===ids.length?'Preview reused · no additional points':`${(now()-startTime).toFixed(1)} ms completion · preview reused`;if($('autoFit').checked&&!$('lockCamera').checked)fitCloudPreview(f,seed)}
-    function step(){
-      if(token!==renderToken||$('animMode').value!=='static')return;
-      if(paused){requestAnimationFrame(step);return}
-      if(processed>=n){done();return}
-      const count=Math.min(6000,n-processed);let chunk=completion.chunks[chunkIndex];
-      if(!chunk){
-        chunk=f.total<=4294967295n?new Uint32Array(count):new Array(count);
-        for(let j=0;j<count;j++)chunk[j]=completion.perm.at(processed+j);
-        // Bound retained completion caches; this does not limit rendering.
-        if(n<=1000000)completion.chunks[chunkIndex]=chunk;
+    if(processed<n){
+      if(!cache.completion||cache.completion.n!==n){
+        const count=n-ids.length,perm=makePermuter(f.total,seed);
+        const remaining=f.total<=4294967295n?new Uint32Array(count):new Array(count);
+        for(let j=0;j<count;j++)remaining[j]=perm.at(ids.length+j);
+        cache.completion={n,ids:remaining};
       }
-      chunkIndex++;renderedChunks.push(chunk);
-      if(activeBackend==='gpu')glr.draw(chunk,f,z,false);else cpuDraw(chunk,f,z,false);
-      processed+=count;updateHUD('Completing preview');
-      if(processed>=n)done();else requestAnimationFrame(step);
+      const remaining=cache.completion.ids;
+      renderedChunks.push(remaining);
+      if(activeBackend==='gpu')glr.draw(remaining,f,z,false);else cpuDraw(remaining,f,z,false);
+      processed=n;
     }
-    if(processed>=n)done();else{updateHUD('Completing preview');requestAnimationFrame(step)}
+    updateHUD(currentSampled?'Sample complete':'Complete');
+    $('rateLine').textContent=processed===ids.length?'Preview reused · no additional points':`${(now()-startTime).toFixed(1)} ms main-thread completion work · preview reused`;
+    if($('autoFit').checked&&!$('lockCamera').checked)fitCloudPreview(f,seed);
     return;
   }
   if($('autoFit').checked&&!$('lockCamera').checked)fitCloudPreview(f,seed);
