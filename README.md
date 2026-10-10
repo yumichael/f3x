@@ -114,6 +114,14 @@ Complete-frame animation reuses the selected IDs and caches for up to one millio
 Density rendering keeps its existing evaluation path. Voronoi mode evaluates sites on the CPU and performs its screen-space nearest-site stage on the GPU when WebGL2 floating-point render targets are available.
 
 
+### Hover settling and drag release
+
+In Points mode, stopping a hover or releasing the input continues the seeded preview toward the selected **Render amount**. If the preview already contains that many members, its existing raster and evaluation caches are kept. If the normal render requests more members, only the missing members are appended in cancellable chunks, without clearing the preview. The HUD shows `Completing preview` during this step. **Render amount → All** can therefore still take additional time when the full family is larger than the interaction budget.
+
+Completion chunks retain their IDs and evaluation plans between gestures when the normal target is at most one million members. Larger targets still render fully, with bounded retention of completion caches between gestures. A smaller normal target uses a cached shorter prefix. New pointer movement cancels unfinished completion immediately; release also cancels any pending preview callback so it cannot replace the final render. Optional automatic fitting uses already evaluated Points values and redraws them at the fitted camera.
+
+To keep exactly the moving subset after a hover, select **Hover behavior → Fixed subset only**. Density and Voronoi use their existing normal-render completion path.
+
 ### Validation and measured frame costs
 
 In headless Chromium at a 950×800 output size with software WebGL, the optimized Points path produced these measurements. Warm figures are medians of seven changing-input frames and include CPU evaluation, projection, clearing, HUD updates, and draw submission; they exclude the input overlay and are not displayed-FPS measurements. Hardware GPU results and browser scheduling will differ.
@@ -125,7 +133,7 @@ In headless Chromium at a 950×800 output size with software WebGL, the optimize
 | Same, up to D=8 | 87,381 | 437 ms | 11.6 ms |
 | Same, up to D=9 | 349,525 | 1,677 ms | 43.0 ms |
 
-Numerical regression checks compared 15,972 outputs across 54 configurations with the original descriptor evaluator, with no observed numerical differences. Coverage included all matrix presets, constrained words, exact and up-to lengths, the empty word, intermediate poles, BigInt samples, and rational functions from six generators over five bases. Browser checks also covered Points/density/Voronoi switching, ordinary polynomial GPU evaluation, matrix eigenvalue pairs, budget changes, cache invalidation, Canvas fallback, and composite snapshots.
+Numerical regression checks compared 15,972 outputs across 54 configurations with the original descriptor evaluator, with no observed numerical differences. Coverage included all matrix presets, constrained words, exact and up-to lengths, the empty word, intermediate poles, BigInt samples, and rational functions from six generators over five bases. Hover-settle regression checks verified zero draw/clear/decode calls when the preview already met the final target (87,381 points; about 0.4 ms completion), append-only completion without duplicate IDs, cached completion on repeated gestures, cancellation by new movement, smaller targets, and fitting without decoding. Browser checks also covered Points/density/Voronoi switching, ordinary polynomial GPU evaluation, matrix eigenvalue pairs, budget changes, cache invalidation, Canvas fallback, and composite snapshots.
 
 ## Expression language
 
