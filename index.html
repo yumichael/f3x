@@ -910,37 +910,29 @@ function finishInteraction(warn=false){
   if($('animMode').value!=='static')return;
   if($('renderStyle').value!=='points'){requestRender(warn);return}
   let f;try{f=makeFamily()}catch(e){toast(e.message,2000);return}
-  const nBig=targetCount(f);
-  if(warn&&warningNeeded(nBig)){maybeWarn(nBig,()=>finishInteraction(false));return}
+  const nBig=f.total;
+  if(warn&&warningNeeded(nBig)){maybeWarn(nBig,()=>finishInteraction(false),renderMovingPreview);return}
   const ids=interactionIds(f),cache=interactionIdsCache,z=getZ(),seed=Number($('seed').value)>>>0;
   const n=Number(nBig<=BigInt(Number.MAX_SAFE_INTEGER)?nBig:BigInt(Number.MAX_SAFE_INTEGER));
-  // A smaller normal budget needs its own stable prefix; never silently exceed it.
-  if(n<ids.length){
-    if(cache.shortCount!==n){cache.shortIds=ids.slice(0,n);cache.shortCount=n}
-    renderDirectFrame(cache.shortIds,f,z,nBig<f.total?'Sample complete':'Complete');
-  }else{
-    const frame=interactionFrame;
-    if(!frame||frame.f!==f||frame.ids!==ids||frame.zr!==z.re||frame.zi!==z.im||frame.token!==renderToken)
-      renderMovingPreview();
-    renderToken++;paused=false;currentSampled=nBig<f.total;totalTarget=n;
-    processed=ids.length;renderedChunks=[ids];startTime=lastRateTime=now();lastRateCount=processed;
-    if(processed<n){
-      if(!cache.completion||cache.completion.n!==n){
-        const count=n-ids.length,perm=makePermuter(f.total,seed);
-        const remaining=f.total<=4294967295n?new Uint32Array(count):new Array(count);
-        for(let j=0;j<count;j++)remaining[j]=perm.at(ids.length+j);
-        cache.completion={n,ids:remaining};
-      }
-      const remaining=cache.completion.ids;
-      renderedChunks.push(remaining);
-      if(activeBackend==='gpu')glr.draw(remaining,f,z,false);else cpuDraw(remaining,f,z,false);
-      processed=n;
+  const frame=interactionFrame;
+  if(!frame||frame.f!==f||frame.ids!==ids||frame.zr!==z.re||frame.zi!==z.im||frame.token!==renderToken)
+    renderMovingPreview();
+  renderToken++;paused=false;currentSampled=false;totalTarget=n;
+  processed=ids.length;renderedChunks=[ids];startTime=lastRateTime=now();lastRateCount=processed;
+  if(processed<n){
+    if(!cache.completion||cache.completion.n!==n){
+      const count=n-ids.length,perm=makePermuter(f.total,seed);
+      const remaining=f.total<=4294967295n?new Uint32Array(count):new Array(count);
+      for(let j=0;j<count;j++)remaining[j]=perm.at(ids.length+j);
+      cache.completion={n,ids:remaining};
     }
-    updateHUD(currentSampled?'Sample complete':'Complete');
-    $('rateLine').textContent=processed===ids.length?'Preview reused · no additional points':`${(now()-startTime).toFixed(1)} ms main-thread completion work · preview reused`;
-    if($('autoFit').checked&&!$('lockCamera').checked)fitCloudPreview(f,seed);
-    return;
+    const remaining=cache.completion.ids;
+    renderedChunks.push(remaining);
+    if(activeBackend==='gpu')glr.draw(remaining,f,z,false);else cpuDraw(remaining,f,z,false);
+    processed=n;
   }
+  updateHUD('Complete');
+  $('rateLine').textContent=processed===ids.length?'Preview reused · no additional points':`${(now()-startTime).toFixed(1)} ms main-thread completion work · preview reused`;
   if($('autoFit').checked&&!$('lockCamera').checked)fitCloudPreview(f,seed);
 }
 
