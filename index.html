@@ -520,13 +520,18 @@ drawVoronoi(sites,colors){this.resize();if(!this.vorTex[0])this.makeVoronoiTarge
 canGPU(f){return f.total<=4294967295n&&f.D<=this.maxD&&f.alphabet.length<=this.maxK&&f.offsets.every(x=>x<=4294967295n)}
 setUniforms(p,f,z){const g=this.gl;const U=(name)=>g.getUniformLocation(p,name);g.uniform1i(U('u_K'),f.K);g.uniform1i(U('u_D'),f.D);g.uniform1i(U('u_upTo'),f.upTo?1:0);g.uniform1i(U('u_zeroIndex'),f.zeroIndex);g.uniform1i(U('u_nonzeroCount'),f.nonzero.length);const aa=new Float32Array(64);f.alphabet.forEach((c,i)=>{aa[2*i]=c.re;aa[2*i+1]=c.im});g.uniform2fv(U('u_alphabet[0]'),aa);const nz=new Int32Array(32);f.nonzero.forEach((x,i)=>nz[i]=x);g.uniform1iv(U('u_nonzeroIndices[0]'),nz);const off=new Uint32Array(65);if(f.upTo)for(let i=0;i<Math.min(65,f.offsets.length);i++)off[i]=Number(f.offsets[i]);else{off[0]=0;off[1]=Number(f.total)}g.uniform1uiv(U('u_offsets[0]'),off);g.uniform2f(U('u_z'),z.re,z.im);const c=cams.out,d=dirs('out');g.uniform2f(U('u_center'),c.center.re,c.center.im);g.uniform2f(U('u_realDir'),d.r[0],d.r[1]);g.uniform2f(U('u_imagDir'),d.i[0],d.i[1]);g.uniform2f(U('u_resolution'),this.canvas.width,this.canvas.height);g.uniform1f(U('u_zoom'),c.zoom*(window.devicePixelRatio||1));g.uniform1f(U('u_pointSize'),Number($('pointSize').value)*(window.devicePixelRatio||1));g.uniform1f(U('u_opacity'),Number($('pointOpacity').value));let mr=0,mi=0,ma=0;for(const c0 of f.alphabet){mr=Math.max(mr,Math.abs(c0.re));mi=Math.max(mi,Math.abs(c0.im));ma=Math.max(ma,Math.hypot(c0.re,c0.im))}g.uniform1f(U('u_maxCoeffAbsRe'),mr);g.uniform1f(U('u_maxCoeffAbsIm'),mi);g.uniform1f(U('u_maxCoeffAbs'),ma);g.uniform1i(U('u_colorMode'),Number($('colorMode').value));g.uniform1i(U('u_transform'),Number($('transform').value));const cc=hexRgb($('pointColor').value);g.uniform3f(U('u_singleColor'),...cc)}
 clear(){this.resize();const g=this.gl;g.bindFramebuffer(g.FRAMEBUFFER,null);const bg=hexRgb($('bgColor').value);g.clearColor(bg[0],bg[1],bg[2],1);g.clear(g.COLOR_BUFFER_BIT);if($('renderStyle').value==='density'){if(!this.densityTex)this.makeDensityTarget();g.bindFramebuffer(g.FRAMEBUFFER,this.densityFbo);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);g.bindFramebuffer(g.FRAMEBUFFER,null)}}
-draw(ids,f,z,clear=false,deferPresent=false){this.resize();const g=this.gl,style=$('renderStyle').value;if(clear)this.clear();const p=style==='density'?this.densityProg:this.pointProg;if(style==='density')g.bindFramebuffer(g.FRAMEBUFFER,this.densityFbo);else g.bindFramebuffer(g.FRAMEBUFFER,null);g.viewport(0,0,this.canvas.width,this.canvas.height);g.useProgram(p);this.setUniforms(p,f,z);g.bindVertexArray(this.vao);g.bindBuffer(g.ARRAY_BUFFER,this.idBuf);if(this.lastIdSource!==ids||this.lastIdLength!==ids.length){g.bufferData(g.ARRAY_BUFFER,ids,g.STREAM_DRAW);this.lastIdSource=ids;this.lastIdLength=ids.length;}g.enable(g.BLEND);if(style==='density'){g.blendFunc(g.ONE,g.ONE);g.uniform1f(g.getUniformLocation(p,'u_densityWeight'),this.floatDensity?1:1/255)}else g.blendFunc(g.SRC_ALPHA,g.ONE_MINUS_SRC_ALPHA);g.drawArrays(g.POINTS,0,ids.length);g.disable(g.BLEND);g.bindVertexArray(null);g.bindFramebuffer(g.FRAMEBUFFER,null);if(style==='density'&&!deferPresent)this.presentDensity();}
-drawPackedPoints(data,count,size,alpha){
+draw(ids,f,z,clear=false,deferPresent=false,first=0,count=ids.length){this.resize();const g=this.gl,style=$('renderStyle').value;if(clear)this.clear();const p=style==='density'?this.densityProg:this.pointProg;if(style==='density')g.bindFramebuffer(g.FRAMEBUFFER,this.densityFbo);else g.bindFramebuffer(g.FRAMEBUFFER,null);g.viewport(0,0,this.canvas.width,this.canvas.height);g.useProgram(p);this.setUniforms(p,f,z);g.bindVertexArray(this.vao);g.bindBuffer(g.ARRAY_BUFFER,this.idBuf);if(this.lastIdSource!==ids||this.lastIdLength!==ids.length){g.bufferData(g.ARRAY_BUFFER,ids,g.STREAM_DRAW);this.lastIdSource=ids;this.lastIdLength=ids.length;}g.enable(g.BLEND);if(style==='density'){g.blendFunc(g.ONE,g.ONE);g.uniform1f(g.getUniformLocation(p,'u_densityWeight'),this.floatDensity?1:1/255)}else g.blendFunc(g.SRC_ALPHA,g.ONE_MINUS_SRC_ALPHA);g.drawArrays(g.POINTS,first,count);g.disable(g.BLEND);g.bindVertexArray(null);g.bindFramebuffer(g.FRAMEBUFFER,null);if(style==='density'&&!deferPresent)this.presentDensity();}
+drawPackedPoints(data,count,size,alpha,revision=null){
   this.resize();const g=this.gl;g.bindFramebuffer(g.FRAMEBUFFER,null);g.viewport(0,0,this.canvas.width,this.canvas.height);
   g.useProgram(this.packedProg);g.uniform1f(this.packedSize,size);g.uniform1f(this.packedAlpha,alpha);
   g.bindVertexArray(this.packedVao);g.bindBuffer(g.ARRAY_BUFFER,this.packedBuf);
-  if(count*20>this.packedCapacity){this.packedCapacity=Math.max(count*20,this.packedCapacity*2,1024);g.bufferData(g.ARRAY_BUFFER,this.packedCapacity,g.DYNAMIC_DRAW)}
-  if(count){g.bufferSubData(g.ARRAY_BUFFER,0,data,0,count*5);g.enable(g.BLEND);g.blendFunc(g.SRC_ALPHA,g.ONE_MINUS_SRC_ALPHA);g.drawArrays(g.POINTS,0,count);g.disable(g.BLEND)}
+  if(count&&(!revision||this.lastPackedData!==data||this.lastPackedRevision!==revision||this.lastPackedCount!==count)){
+    this.packedCapacity=Math.max(count*20,1024);
+    // Orphan storage before upload so earlier draws cannot stall the main thread.
+    g.bufferData(g.ARRAY_BUFFER,this.packedCapacity,g.STREAM_DRAW);g.bufferSubData(g.ARRAY_BUFFER,0,data,0,count*5);
+    this.lastPackedData=data;this.lastPackedRevision=revision;this.lastPackedCount=count;
+  }
+  if(count){g.enable(g.BLEND);g.blendFunc(g.SRC_ALPHA,g.ONE_MINUS_SRC_ALPHA);g.drawArrays(g.POINTS,0,count);g.disable(g.BLEND)}
   g.bindVertexArray(null);
 }
 presentDensity(){const g=this.gl;g.bindFramebuffer(g.FRAMEBUFFER,null);const bg=hexRgb($('bgColor').value);g.clearColor(bg[0],bg[1],bg[2],1);g.clear(g.COLOR_BUFFER_BIT);g.useProgram(this.postProg);g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,this.densityTex);g.uniform1i(g.getUniformLocation(this.postProg,'u_tex'),0);g.uniform1i(g.getUniformLocation(this.postProg,'u_tone'),$('tone').value==='linear'?0:$('tone').value==='sqrt'?1:2);g.uniform1f(g.getUniformLocation(this.postProg,'u_exposure'),Number($('exposure').value));g.uniform1f(g.getUniformLocation(this.postProg,'u_densityScale'),this.floatDensity?1:255);const c=hexRgb($('pointColor').value);g.uniform3f(g.getUniformLocation(this.postProg,'u_color'),...c);g.drawArrays(g.TRIANGLES,0,3)}
@@ -570,7 +575,20 @@ function fastPointPlan(ids,f){
   if(kind==='rational'||kind==='linear')Object.assign(p,{polys,left,right,polyValues:new Float64Array(polys.length*2)});
   f.pointPlans.set(ids,p);return p;
 }
+// A view retains the source evaluation and color buffers instead of decoding again.
+function pointSelectionSlice(ids,f,first,count){
+  if(first===0&&count===ids.length)return ids;
+  const view=ids instanceof Uint32Array?ids.subarray(first,first+count):ids.slice(first,first+count),plan=f.pointPlans.get(ids);
+  if(!f.selectionViews)f.selectionViews=new WeakMap();
+  const origin=f.selectionViews.get(ids)||{ids,first:0};f.selectionViews.set(view,{ids:origin.ids,first:origin.first+first});
+  if(plan){
+    const source=plan.source||plan;
+    f.pointPlans.set(view,{...plan,n:count,source,values:plan.values.subarray(first*2,(first+count)*2),colors:plan.colors.subarray(first*3,(first+count)*3),vertices:null});
+  }
+  return view;
+}
 function evaluatePointPlan(p,f,z){
+  if(p.source){evaluatePointPlan(p.source,f,z);p.zr=z.re;p.zi=z.im;return p.values}
   if(p.zr===z.re&&p.zi===z.im)return p.values;
   const out=p.values;
   if(p.kind==='mobius'){
@@ -611,16 +629,20 @@ function evaluatePointPlan(p,f,z){
 }
 // Screen projection stays f64 until normalized clip coordinates are uploaded.
 // This avoids losing small separations around a large camera center in f32.
+function gpuPointsAvailable(){return !!glr&&!glr.gl.isContextLost()&&Number($('pointSize').value)*(window.devicePixelRatio||1)<=glr.maxPointSize}
+function pointProjectionKey(z){return JSON.stringify([z.re,z.im,cams.out.center.re,cams.out.center.im,cams.out.zoom,window.devicePixelRatio||1,cpu.width,cpu.height,$('outRealDir').value,$('outImagDir').value,$('transform').value,pointColorKey()])}
 function drawFastPoints(ids,f,z){
   const p=fastPointPlan(ids,f),key=pointColorKey();
   if(p.colorKey!==key){const mode=Number($('colorMode').value),single=hexRgb($('pointColor').value);for(let i=0;i<ids.length;i++)p.colors.set(colorVecFor(decodeId(ids[i],f),f,mode,single),i*3);p.colorKey=key}
-  if(p.kind!=='general')evaluatePointPlan(p,f,z);
   resize2d(cpu);const dpr=window.devicePixelRatio||1,w=cpu.width,h=cpu.height,c=cams.out,dir=dirs('out'),zoom=c.zoom*dpr;
   const mode=Number($('transform').value),size=Number($('pointSize').value)*dpr,alpha=Number($('pointOpacity').value);
-  const useGL=!!glr&&!glr.gl.isContextLost()&&size<=glr.maxPointSize;
+  const useGL=gpuPointsAvailable();
+  const projection=pointProjectionKey(z);let count=p.packedCount||0;
+  if(!p.vertices||p.packedKey!==projection){
+    if(p.kind!=='general')evaluatePointPlan(p,f,z);
   // Matrix eigenvalue mode can return two points per family member.
   if(!p.vertices)p.vertices=new Float32Array(p.n*(f.evaluation==='matrix'&&$('matrixObservation').value==='bothEigen'?2:1)*5);
-  const data=p.vertices;let count=0;
+  const data=p.vertices;count=0;
   function emit(re,im,i){
     if(mode===1){const d=re*re+im*im;if(d<1e-300)return;re=re/d;im=-im/d}
     else if(mode===2){const d=Math.hypot(re,im);if(d<1e-300)return;const a=Math.atan2(im,re);re=Math.log(d);im=a}
@@ -634,7 +656,10 @@ function drawFastPoints(ids,f,z){
     if(p.kind==='general'){for(const v of evalDescriptor(ids[i],f,z).values)emit(v.re,v.im,i)}
     else emit(p.values[2*i],p.values[2*i+1],i);
   }
-  if(useGL)glr.drawPackedPoints(data,count,size,alpha);
+    p.packedKey=projection;p.packedCount=count;p.packedVersion=(p.packedVersion||0)+1;
+  }
+  const data=p.vertices;
+  if(useGL)glr.drawPackedPoints(data,count,size,alpha,p.packedVersion);
   else{cpuCtx.globalAlpha=alpha;for(let i=0;i<count;i++){const j=i*5;cpuCtx.fillStyle=`rgb(${Math.round(data[j+2]*255)},${Math.round(data[j+3]*255)},${Math.round(data[j+4]*255)})`;cpuCtx.beginPath();cpuCtx.arc((data[j]+1)*w/2,(1-data[j+1])*h/2,size/2,0,Math.PI*2);cpuCtx.fill()}cpuCtx.globalAlpha=1}
 }
 
@@ -780,6 +805,7 @@ function startRender(f,nBig,sampled,onComplete=null,idsOverride=null,bypassLimit
   if(!bypassLimit&&nBig>targetCount(f))nBig=targetCount(f);
   sampled=nBig<f.total;
   const token=++renderToken,z=getZ(),backend=chooseBackend(f),style=$('renderStyle').value;
+  const sources=bypassLimit&&style==='points'&&currentFamily===f&&BigInt(processed)===nBig&&renderedChunks.reduce((n,ids)=>n+BigInt(ids.length),0n)===nBig?renderedChunks.slice():null;
   currentFamily=f;processed=0;startTime=lastRateTime=now();lastRateCount=0;renderedChunks=[];currentSampled=sampled;paused=false;$('pauseBtn').textContent='Pause';
   $('rateLine').textContent='—';activeBackend=backend;
   $('backendPill').textContent=style==='voronoi'?'Backend: CPU f64 sites + GPU Voronoi':`Backend: ${backend==='gpu'?'GPU f32 shader':pointBackendLabel()}`;
@@ -788,12 +814,13 @@ function startRender(f,nBig,sampled,onComplete=null,idsOverride=null,bypassLimit
   // Retain selections and plans for subsequent renders of the same family and seed.
   const previous=f.progressiveSelection?.seed===seed?f.progressiveSelection.chunks:null,cache=new Map(),perm=currentPerm;
   f.progressiveSelection={seed,chunks:cache};
-  let offset=0n,batchSize=32,cpuWork=0,fence=null,turnStarted=0,finalized=style!=='voronoi';
+  let offset=0n,batchSize=32,cpuWork=0,turnStarted=0,finalized=style!=='voronoi',sourceIndex=0,sourceOffset=0;
+  const fences=[];
   let fitting=$('autoFit').checked&&!$('lockCamera').checked;
   const fitTarget=nBig<30000n?nBig:30000n,fitX=[],fitY=[];
   function collectFit(raw){const v=transformOutput(raw);if(v&&Number.isFinite(v.re)&&Number.isFinite(v.im)){fitX.push(v.re);fitY.push(v.im)}}
   const gl=glr&&!glr.gl.isContextLost()?glr.gl:null;
-  function releaseFence(){if(fence){gl.deleteSync(fence);fence=null}}
+  function releaseFence(){for(const fence of fences)gl.deleteSync(fence);fences.length=0}
   function valid(){if(token===renderToken)return true;releaseFence();return false}
   function done(){
     updateHUD(sampled?'Sample complete':'Complete');
@@ -802,14 +829,17 @@ function startRender(f,nBig,sampled,onComplete=null,idsOverride=null,bypassLimit
   }
   function continueAfterGPU(){
     if(!valid())return;
-    if(fence){
-      const result=gl.clientWaitSync(fence,0,0);
-      if(result===gl.TIMEOUT_EXPIRED){setTimeout(continueAfterGPU,1);return}
-      releaseFence();
-      // Include GPU backpressure when selecting the next batch size.
-      const elapsed=now()-turnStarted;if(elapsed>12)batchSize=Math.max(1,Math.floor(batchSize*8/elapsed));
+    while(fences.length){
+      const result=gl.clientWaitSync(fences[0],0,0);
+      if(result===gl.TIMEOUT_EXPIRED){
+        // Keep a small pipeline; only wait when it is full. Completion measures
+        // submission time, like direct frames, without waiting for the last draw.
+        if(offset<nBig&&fences.length>=3){setTimeout(continueAfterGPU,1);return}
+        break;
+      }
+      gl.deleteSync(fences.shift());
     }
-    if(offset>=nBig){if(finalized)done();else queueRenderTask(finishVoronoi)}else queueRenderTask(step);
+    if(offset>=nBig){releaseFence();if(finalized)done();else queueRenderTask(finishVoronoi)}else queueRenderTask(step);
   }
   let colorSteps=null;
   function finishVoronoi(){
@@ -824,26 +854,56 @@ function startRender(f,nBig,sampled,onComplete=null,idsOverride=null,bypassLimit
         glr.drawVoronoi(voronoiSites,result.value);
       }
       finalized=true;cpuWork+=now()-turnStarted;
-      if(gl){fence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);gl.flush()}
+      if(gl){const fence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);if(fence)fences.push(fence);gl.flush()}
       continueAfterGPU();
     }catch(e){releaseFence();renderToken++;toast(e.message,4000);updateHUD('Render failed')}
+  }
+  let packet=null,packetIndex=0,packetOffset=0;
+  const projection=pointProjectionKey(z);
+  if(!fitting&&sources?.length>1&&backend==='cpu'&&gpuPointsAvailable()&&sources.every(ids=>{const p=f.pointPlans.get(ids);return p?.vertices&&p.packedKey===projection})){
+    const old=f.fullPacket;
+    if(old?.projection===projection&&old.sources.length===sources.length&&old.sources.every((ids,i)=>ids===sources[i]))packet=old;
+    else packet={projection,sources,count:sources.reduce((n,ids)=>n+f.pointPlans.get(ids).packedCount,0),data:null};
   }
   function step(){
     if(!valid())return;
     if(paused){setTimeout(step,30);return}
     turnStarted=now();
     try{
+      if(packet){
+        if(!packet.data)packet.data=new Float32Array(packet.count*5);
+        if(packet===f.fullPacket){renderedChunks=sources.slice();processed=Number(nBig);packetIndex=sources.length}
+        else while(packetIndex<sources.length&&now()-turnStarted<8){
+          const ids=sources[packetIndex++],plan=f.pointPlans.get(ids),length=plan.packedCount*5;
+          packet.data.set(plan.vertices.subarray(0,length),packetOffset);packetOffset+=length;
+          renderedChunks.push(ids);processed+=ids.length;
+        }
+        cpuWork+=now()-turnStarted;
+        if(packetIndex<sources.length){updateHUD('Preparing full frame');queueRenderTask(step);return}
+        const drawStarted=now();glr.drawPackedPoints(packet.data,packet.count,Number($('pointSize').value)*(window.devicePixelRatio||1),Number($('pointOpacity').value),1);cpuWork+=now()-drawStarted;
+        f.fullPacket=packet;offset=nBig;done();return;
+      }
       do{
         const batchStarted=now(),remaining=(fitting?fitTarget:nBig)-offset;
         if(remaining<=0n)break;
-        let ids=idsOverride?null:(cache.get(offset)||previous?.get(offset));
-        if(ids&&(BigInt(ids.length)>remaining||ids.length>batchSize))ids=ids.slice(0,Number(remaining<BigInt(batchSize)?remaining:BigInt(batchSize)));
-        if(!ids){
-          const count=Number(remaining<BigInt(batchSize)?remaining:BigInt(batchSize));
-          if(idsOverride)ids=idsOverride.slice(Number(offset),Number(offset)+count);
-          else{
-            ids=f.total<=4294967295n?new Uint32Array(count):new Array(count);
-            for(let j=0;j<count;j++)ids[j]=perm instanceof Permuter32?perm.at(Number(offset)+j):perm.at(offset+BigInt(j));
+        let ids,drawIds=null,drawFirst=0;
+        const count=Number(remaining<BigInt(batchSize)?remaining:BigInt(batchSize));
+        if(sources&&!fitting){
+          const source=sources[sourceIndex],plan=f.pointPlans.get(source);
+          const ready=gpuPointsAvailable()&&sourceOffset===0&&plan?.vertices&&plan.packedKey===pointProjectionKey(z);
+          const take=ready?source.length:Math.min(count,source.length-sourceOffset);
+          drawIds=source;drawFirst=sourceOffset;ids=pointSelectionSlice(source,f,sourceOffset,take);
+          sourceOffset+=take;if(sourceOffset===source.length){sourceIndex++;sourceOffset=0}
+        }else{
+          ids=idsOverride?null:(cache.get(offset)||previous?.get(offset));
+          const plan=ids&&f.pointPlans.get(ids),ready=gpuPointsAvailable()&&plan?.vertices&&plan.packedKey===pointProjectionKey(z);
+          if(ids&&(BigInt(ids.length)>remaining||(!ready&&ids.length>batchSize)))ids=pointSelectionSlice(ids,f,0,count);
+          if(!ids){
+            if(idsOverride)ids=pointSelectionSlice(idsOverride,f,Number(offset),count);
+            else{
+              ids=f.total<=4294967295n?new Uint32Array(count):new Array(count);
+              for(let j=0;j<count;j++)ids[j]=perm instanceof Permuter32?perm.at(Number(offset)+j):perm.at(offset+BigInt(j));
+            }
           }
         }
         if(!idsOverride)cache.set(offset,ids);
@@ -855,18 +915,18 @@ function startRender(f,nBig,sampled,onComplete=null,idsOverride=null,bypassLimit
           }else for(const id of ids)for(const raw of evalDescriptor(id,f,z).values)collectFit(raw);
         }else{
           renderedChunks.push(ids);
-          if(backend==='gpu')glr.draw(ids,f,z,false,true);else cpuDraw(ids,f,z,false,true);
+          if(backend==='gpu'){const origin=f.selectionViews?.get(drawIds||ids);glr.draw(origin?.ids||drawIds||ids,f,z,false,true,(origin?.first||0)+drawFirst,ids.length)}else cpuDraw(ids,f,z,false,true);
           processed+=ids.length;
         }
         offset+=BigInt(ids.length);
-        if(fitting&&offset>=fitTarget){fitCloudBounds(fitX,fitY);fitting=false;offset=0n;drawOverlays()}
+        if(fitting&&offset>=fitTarget){fitCloudBounds(fitX,fitY);fitting=false;offset=0n;sourceIndex=sourceOffset=0;drawOverlays()}
         const work=now()-batchStarted,cost=Math.max(.05,work);cpuWork+=work;
         // Aim for 3 ms of work per batch; growth is conservative on cold plans.
         batchSize=Math.max(1,Math.floor(ids.length*clamp(3/cost,.125,2)));
       }while(offset<nBig&&now()-turnStarted<8);
       if(!fitting&&style==='density'){const t=now();if(backend==='gpu')glr.presentDensity();else presentCpuDensity();cpuWork+=now()-t}
       updateHUD(fitting?'Fitting cloud':sampled?'Sampling':'Rendering');
-      if(gl){fence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);gl.flush()}
+      if(gl){const fence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);if(fence)fences.push(fence);gl.flush()}
       continueAfterGPU();
     }catch(e){releaseFence();renderToken++;toast(e.message,4000);updateHUD('Render failed')}
   }
