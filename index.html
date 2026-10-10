@@ -294,6 +294,7 @@
         <div class="row"><label>Samples N</label><input id="pathN" type="number" min="1" max="100000" value="960" class="small"><label><input id="endpoint" type="checkbox"> Include endpoint</label></div>
         <div class="row"><label><input id="loopPath" type="checkbox" checked> Loop</label><label>FPS</label><input id="pathFps" type="number" min="1" max="120" value="30" class="small"></div>
         <div class="row"><label>Render mode</label><select id="pathRenderMode"><option value="preview">Realtime Preview</option><option value="complete">Complete Each Frame</option><option value="fixed" selected>Fixed Sample Subset</option></select></div>
+        <div class="note">Complete Each Frame renders the entire family. Preview and Fixed Subset use the budgets below.</div>
         <div class="row"><label>Preview budget</label><input id="previewBudget" type="number" min="100" value="15876" class="grow"></div>
         <div class="row"><label>Fixed subset</label><input id="fixedSubset" type="number" min="1" value="15876" class="grow"></div>
         <div class="row"><label><input id="showPath" type="checkbox"> Show path</label><label><input id="showTrail" type="checkbox" checked> Trail</label></div>
@@ -773,9 +774,62 @@ function sampledIds(f,wantValue){const want=BigInt(Math.max(1,Math.floor(Number(
 function sequentialIds(f){const len=Number(f.total);if(f.total<=4294967295n){const a=new Uint32Array(len);for(let i=0;i<len;i++)a[i]=i;return a}const a=new Array(len);for(let i=0;i<len;i++)a[i]=BigInt(i);return a}
 function renderDirectFrame(ids,f,z,status){const frameStart=now();renderToken++;const backend=chooseBackend(f);activeBackend=backend;currentFamily=f;currentPerm=null;paused=false;renderedChunks=[ids];processed=ids.length;totalTarget=ids.length;currentSampled=BigInt(ids.length)<f.total;startTime=now();lastRateTime=startTime;lastRateCount=0;$('backendPill').textContent=$('renderStyle').value==='voronoi'?'Backend: CPU f64 sites + GPU Voronoi':`Backend: ${backend==='gpu'?'GPU f32 shader':pointBackendLabel()}`;if(glr)glr.clear();clearCPU();if(backend==='gpu'&&ids instanceof Uint32Array)glr.draw(ids,f,z,false);else cpuDraw(ids,f,z,false);updateHUD(status);$('rateLine').textContent=`${(now()-frameStart).toFixed(1)} ms CPU frame work · ${ids.length.toLocaleString()} members`}
 function scheduleCompleteAdvance(frameStarted){clearTimeout(completeAdvanceTimer);if(!animPlaying||animationUiPaused)return;const fps=Math.max(1,Number($('pathFps').value)||30),delay=Math.max(0,1000/fps-(now()-frameStarted));completeAdvanceTimer=setTimeout(()=>{if(animPlaying&&!animationUiPaused&&$('animMode').value==='path'&&$('pathRenderMode').value==='complete')advanceFrame(1)},delay)}
-function renderAnimationFrame(){const mode=$('animMode').value;if(mode==='path'){if(!pathFn&&!rebuildPath())return;const N=Math.max(1,parseInt($('pathN').value)||1);animFrame=clamp(animFrame,0,N-1);const z=pathZFor(animFrame);$('zRe').value=z.re;$('zIm').value=z.im;const last=trail.at(-1);if(!last||Math.hypot(last.re-z.re,last.im-z.im)>1e-12)trail.push(z);const tl=Math.max(1,parseInt($('trailLength').value)||40);if(trail.length>tl)trail.splice(0,trail.length-tl);drawOverlays();let f;try{f=makeFamily()}catch(e){toast(e.message);return}const rm=$('pathRenderMode').value,backend=chooseBackend(f),frameStarted=now();if(rm==='fixed'){if(!fixedIds)fixedIds=sampledIds(f,$('fixedSubset').value);renderDirectFrame(fixedIds,f,z,'Fixed subset frame')}else if(rm==='preview'){if(!previewIds)previewIds=sampledIds(f,$('previewBudget').value);renderDirectFrame(previewIds,f,z,'Realtime preview')}else{const DIRECT_CPU_LIMIT=$('renderStyle').value==='points'&&['mobius','rational','linear'].includes(f.evaluation)?1000000n:100000n;if(backend==='gpu'||f.total<=DIRECT_CPU_LIMIT){if(!completeIds)completeIds=sequentialIds(f);renderDirectFrame(completeIds,f,z,'Complete frame');scheduleCompleteAdvance(frameStarted)}else{const old=$('renderAmount').value;$('renderAmount').value='all';requestRender(false,()=>scheduleCompleteAdvance(frameStarted));$('renderAmount').value=old;return}}}else if(mode==='degree'){const max=Math.max(0,parseInt($('sweepMax').value)||0);animFrame=clamp(animFrame,0,max);$('degree').value=animFrame;if($('sweepType').value==='current'){$('exactBtn').classList.add('active');$('upToBtn').classList.remove('active')}else{$('upToBtn').classList.add('active');$('exactBtn').classList.remove('active')}countForUI();requestRender(false)}}
+// Complete Points frames retain the same IDs and plans, including above one million.
+// MessageChannel yields to the browser without a timer clamp or a vsync per batch.
+const completeTaskChannel=new MessageChannel(),completeTasks=[];
+completeTaskChannel.port1.onmessage=()=>{const task=completeTasks.shift();if(task)task()};
+function queueCompleteTask(task){completeTasks.push(task);completeTaskChannel.port2.postMessage(0)}
+function renderCompletePointsFrame(f,z,frameStarted){
+  clearTimeout(completeAdvanceTimer);
+  let cache=f.completePointCache;
+  if(!cache){
+    // An exhaustive preview already owns useful plans, irrespective of its order.
+    const exhaustive=currentFamily===f&&BigInt(processed)===f.total&&renderedChunks.length&&renderedChunks.reduce((n,ch)=>n+BigInt(ch.length),0n)===f.total;
+    cache=f.completePointCache={chunks:exhaustive?renderedChunks.slice():[]};
+  }
+  const token=++renderToken;currentFamily=f;currentPerm=null;currentSampled=false;
+  activeBackend=chooseBackend(f);paused=false;processed=0;
+  totalTarget=Number(f.total<=BigInt(Number.MAX_SAFE_INTEGER)?f.total:BigInt(Number.MAX_SAFE_INTEGER));
+  renderedChunks=[];startTime=lastRateTime=now();lastRateCount=0;
+  $('backendPill').textContent=`Backend: ${activeBackend==='gpu'?'GPU f32 shader':pointBackendLabel()}`;
+  $('rateLine').textContent='Preparing complete frame';
+  if(glr)glr.clear();clearCPU();
+  let offset=0n,index=0,cpuWork=now()-frameStarted;
+  function step(){
+    if(token!==renderToken)return;
+    if(paused){setTimeout(step,30);return}
+    const sliceStart=now();
+    try{
+      do{
+        if(offset>=f.total)break;
+        let ids=cache.chunks[index];
+        if(!ids){
+          const count=Number(f.total-offset>16384n?16384n:f.total-offset);
+          ids=f.total<=4294967295n?new Uint32Array(count):new Array(count);
+          if(ids instanceof Uint32Array){const first=Number(offset);for(let j=0;j<count;j++)ids[j]=first+j}
+          else for(let j=0;j<count;j++)ids[j]=offset+BigInt(j);
+          cache.chunks[index]=ids;
+        }
+        if(activeBackend==='gpu'&&!(ids instanceof Uint32Array)){ids=Uint32Array.from(ids,Number);cache.chunks[index]=ids}
+        renderedChunks.push(ids);
+        if(activeBackend==='gpu')glr.draw(ids,f,z,false);else cpuDraw(ids,f,z,false);
+        offset+=BigInt(ids.length);processed=Number(offset);index++;
+      }while(offset<f.total&&now()-sliceStart<10);
+    }catch(e){renderToken++;toast(e.message,4000);updateHUD('Complete frame failed');return}
+    cpuWork+=now()-sliceStart;
+    if(offset<f.total){updateHUD('Rendering complete frame');queueCompleteTask(step)}
+    else{
+      updateHUD('Complete frame');
+      $('rateLine').textContent=`${cpuWork.toFixed(1)} ms CPU frame work · ${(now()-frameStarted).toFixed(1)} ms elapsed · ${fmtInt(f.total)} members`;
+      scheduleCompleteAdvance(frameStarted);
+    }
+  }
+  step();
+}
+
+function renderAnimationFrame(){clearTimeout(completeAdvanceTimer);const mode=$('animMode').value;if(mode==='path'){if(!pathFn&&!rebuildPath())return;const N=Math.max(1,parseInt($('pathN').value)||1);animFrame=clamp(animFrame,0,N-1);const z=pathZFor(animFrame);$('zRe').value=z.re;$('zIm').value=z.im;const last=trail.at(-1);if(!last||Math.hypot(last.re-z.re,last.im-z.im)>1e-12)trail.push(z);const tl=Math.max(1,parseInt($('trailLength').value)||40);if(trail.length>tl)trail.splice(0,trail.length-tl);drawOverlays();let f;try{f=makeFamily()}catch(e){toast(e.message);return}const rm=$('pathRenderMode').value,backend=chooseBackend(f),frameStarted=now();if(rm==='fixed'){if(!fixedIds)fixedIds=sampledIds(f,$('fixedSubset').value);renderDirectFrame(fixedIds,f,z,'Fixed subset frame')}else if(rm==='preview'){if(!previewIds)previewIds=sampledIds(f,$('previewBudget').value);renderDirectFrame(previewIds,f,z,'Realtime preview')}else if($('renderStyle').value==='points'){renderCompletePointsFrame(f,z,frameStarted)}else{const DIRECT_CPU_LIMIT=100000n;if(backend==='gpu'||f.total<=DIRECT_CPU_LIMIT){if(!completeIds)completeIds=sequentialIds(f);renderDirectFrame(completeIds,f,z,'Complete frame');scheduleCompleteAdvance(frameStarted)}else{const old=$('renderAmount').value;$('renderAmount').value='all';requestRender(false,()=>scheduleCompleteAdvance(frameStarted));$('renderAmount').value=old;return}}}else if(mode==='degree'){const max=Math.max(0,parseInt($('sweepMax').value)||0);animFrame=clamp(animFrame,0,max);$('degree').value=animFrame;if($('sweepType').value==='current'){$('exactBtn').classList.add('active');$('upToBtn').classList.remove('active')}else{$('upToBtn').classList.add('active');$('exactBtn').classList.remove('active')}countForUI();requestRender(false)}}
 function advanceFrame(d){const mode=$('animMode').value;if(mode==='path'){const N=Math.max(1,parseInt($('pathN').value)||1);let n=animFrame+d,wrapped=false;if(n>=N){n=$('loopPath').checked?0:N-1;wrapped=$('loopPath').checked}if(n<0){n=$('loopPath').checked?N-1:0;wrapped=$('loopPath').checked}if(wrapped)trail=[];animFrame=n}else if(mode==='degree'){const N=Math.max(0,parseInt($('sweepMax').value)||0)+1;let n=animFrame+d;if(n>=N)n=$('loopSweep').checked?0:N-1;if(n<0)n=$('loopSweep').checked?N-1:0;animFrame=n}renderAnimationFrame()}
-function playAnimation(){animPlaying=!animPlaying;$('playBtn').textContent=animPlaying?'Pause':'Play';clearInterval(animTimer);clearTimeout(completeAdvanceTimer);if(!animPlaying)return;fixedIds=previewIds=completeIds=null;const fps=$('animMode').value==='degree'?Number($('sweepFps').value):Number($('pathFps').value);animTimer=setInterval(()=>{if(animationUiPaused)return;if($('pathRenderMode').value==='complete'&&$('animMode').value==='path')return;advanceFrame(1)},1000/Math.max(1,fps));renderAnimationFrame()}
+function playAnimation(){animPlaying=!animPlaying;$('playBtn').textContent=animPlaying?'Pause':'Play';clearInterval(animTimer);clearTimeout(completeAdvanceTimer);if(!animPlaying)return;const fps=$('animMode').value==='degree'?Number($('sweepFps').value):Number($('pathFps').value);animTimer=setInterval(()=>{if(animationUiPaused)return;if($('pathRenderMode').value==='complete'&&$('animMode').value==='path')return;advanceFrame(1)},1000/Math.max(1,fps));renderAnimationFrame()}
 
 // ---------- Export / compare / bookmarks ----------
 async function compositeSnapshot(){const c=document.createElement('canvas');c.width=$('glCanvas').width;c.height=$('glCanvas').height;const x=c.getContext('2d');x.fillStyle=$('bgColor').value;x.fillRect(0,0,c.width,c.height);x.drawImage($('glCanvas'),0,0);x.drawImage(cpu,0,0);x.drawImage(overlay,0,0);return c}
@@ -860,7 +914,7 @@ for(const [r,i] of [[$('outRealDir'),$('outImagDir')],[$('inRealDir'),$('inImagD
 ['inputSize','inputColor','inputOutline','crosshair','showInput','showTrail','trailLength','trailOpacity','showPath'].forEach(id=>$(id).addEventListener('input',drawOverlays));
 ['zRe','zIm'].forEach(id=>$(id).addEventListener('change',()=>{drawOverlays();if($('animMode').value==='static')requestRender(true)}));
 $('animMode').onchange=()=>{$('pathControls').style.display=$('animMode').value==='path'?'block':'none';$('degreeControls').style.display=$('animMode').value==='degree'?'block':'none';animPlaying=false;$('playBtn').textContent='Play';clearInterval(animTimer);clearTimeout(completeAdvanceTimer);renderToken++;animFrame=0;trail=[];fixedIds=previewIds=completeIds=null;updateInputControlState();if($('animMode').value==='path')rebuildPath()};
-$('matrixPreset').onchange=()=>applyMatrixPreset($('matrixPreset').value);$('matrixAlphabet').addEventListener('input',()=>{$('matrixPreset').value='';});$('pathPreset').onchange=()=>applyPathPreset($('pathPreset').value);['pathExpr','tStart','tEnd','pathN','endpoint'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='pathExpr')$('pathPreset').value='';fixedIds=previewIds=completeIds=null;trail=[];rebuildPath();if($('animMode').value==='path')renderAnimationFrame()}));['fixedSubset','previewBudget'].forEach(id=>$(id).addEventListener('change',()=>{fixedIds=previewIds=null;if($('animMode').value==='path')renderAnimationFrame()}));$('pathRenderMode').onchange=()=>{renderToken++;clearTimeout(completeAdvanceTimer);fixedIds=previewIds=completeIds=null;if($('animMode').value==='path')renderAnimationFrame()};$('playBtn').onclick=()=>{if(!animPlaying&&$('animMode').value==='path'&&$('pathRenderMode').value==='complete'){let f;try{f=makeFamily()}catch(e){toast(e.message);return}const N=BigInt(Math.max(1,parseInt($('pathN').value)||1));maybeWarnAnimation(f.total,N,playAnimation,()=>{$('pathRenderMode').value='preview';playAnimation()})}else playAnimation()};$('prevFrame').onclick=()=>advanceFrame(-1);$('nextFrame').onclick=()=>advanceFrame(1);$('restartAnim').onclick=()=>{renderToken++;clearTimeout(completeAdvanceTimer);animFrame=0;trail=[];renderAnimationFrame()};
+$('matrixPreset').onchange=()=>applyMatrixPreset($('matrixPreset').value);$('matrixAlphabet').addEventListener('input',()=>{$('matrixPreset').value='';});$('pathPreset').onchange=()=>applyPathPreset($('pathPreset').value);['pathExpr','tStart','tEnd','pathN','endpoint'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='pathExpr')$('pathPreset').value='';fixedIds=previewIds=completeIds=null;trail=[];rebuildPath();if($('animMode').value==='path')renderAnimationFrame()}));['fixedSubset','previewBudget'].forEach(id=>$(id).addEventListener('change',()=>{fixedIds=previewIds=null;if($('animMode').value==='path')renderAnimationFrame()}));$('pathRenderMode').onchange=()=>{renderToken++;clearTimeout(completeAdvanceTimer);if($('animMode').value==='path')renderAnimationFrame()};$('playBtn').onclick=()=>{if(!animPlaying&&$('animMode').value==='path'&&$('pathRenderMode').value==='complete'){let f;try{f=makeFamily()}catch(e){toast(e.message);return}const N=BigInt(Math.max(1,parseInt($('pathN').value)||1));maybeWarnAnimation(f.total,N,playAnimation,()=>{$('pathRenderMode').value='preview';playAnimation()})}else playAnimation()};$('prevFrame').onclick=()=>advanceFrame(-1);$('nextFrame').onclick=()=>advanceFrame(1);$('restartAnim').onclick=()=>{renderToken++;clearTimeout(completeAdvanceTimer);animFrame=0;trail=[];renderAnimationFrame()};
 $('exportPreset').onchange=()=>{const v=$('exportPreset').value;if(v){const [w,h]=v.split('x');$('exportW').value=w;$('exportH').value=h}};$('exportBtn').onclick=exportPNG;$('presentationBtn').onclick=()=>{document.body.classList.add('presentation');setTimeout(resizeAll,0)};
 function defaultBookmarkName(){const d=new Date(),date=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');return `Bookmark ${date} ${d.toLocaleTimeString()}`}
 $('saveBookmark').onclick=()=>{const n=$('bookmarkName').value.trim()||defaultBookmarkName(),b=loadBookmarks();b[n]=stateForBookmark();const localOk=persistBookmarks(b);loadBookmarks(n);$('bookmarkName').value=n;toast(localOk?'Bookmark saved':'Bookmark saved in page URL (browser storage unavailable)')};$('loadBookmark').onclick=()=>{const b=loadBookmarks(),n=$('bookmarkList').value;if(b[n]){applyBookmark(b[n]);toast(`Loaded ${n}`)}};$('deleteBookmark').onclick=()=>{const b=loadBookmarks(),n=$('bookmarkList').value;if(n){delete b[n];persistBookmarks(b);loadBookmarks();toast(`Deleted ${n}`)}};
