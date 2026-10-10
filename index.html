@@ -104,6 +104,19 @@
       </div>
 
       <div id="transformWordPanel" style="display:none">
+        <div class="row"><label>Transformation preset</label><select id="matrixPreset" class="grow">
+          <option value="">Custom</option>
+          <option value="rotInv4">Möbius: Complex rotations mixed with inversion</option>
+          <option value="affineRot4">Möbius: Four affine maps with rotational symmetry</option>
+          <option value="zRot2">Möbius: z and conjugate-like rotational roles</option>
+          <option value="zCF4">Möbius: Four-way z-dependent continued-fraction system</option>
+          <option value="zCF8">Möbius: Eight-way z-dependent continued-fraction star</option>
+          <option value="zShift4">Möbius: Four-way shifted z-plus-inversion</option>
+          <option value="quadInv4">Möbius: Quadrant shifts with inversion</option>
+          <option value="zBalanced4">Möbius: Balanced z-fraction quartet</option>
+          <option value="zAffineRot4">Möbius: z-driven affine rotational quartet</option>
+          <option value="zShiftedCF4">Möbius: Shifted z continued-fraction quartet</option>
+        </select></div>
         <label>Transformation / matrix alphabet</label>
         <textarea id="matrixAlphabet" class="wide mono" rows="5">1, 1, 0, 1
 1, 0, 1, 1</textarea>
@@ -234,12 +247,21 @@
           <option value="ellipse">Ellipse</option>
           <option value="figure8">Figure eight</option>
           <option value="lissajous" selected>Lissajous 3:4</option>
+          <option value="lissajous23">Lissajous 2:3</option>
+          <option value="lissajous35">Lissajous 3:5</option>
+          <option value="lissajous45p">Lissajous 4:5 with phase shift</option>
+          <option value="lissajous57">Lissajous 5:7</option>
+          <option value="lissajous67">Lissajous 6:7</option>
           <option value="rose5">5-petal rose</option>
           <option value="epitrochoid">Epitrochoid-like</option>
           <option value="hypotrochoid">Hypotrochoid-like</option>
           <option value="cardioid">Cardioid-like</option>
           <option value="orbit">Offset orbit</option>
           <option value="spiral">Three-turn spiral</option>
+          <option value="spiralInOut3">In-out spiral (3 turns)</option>
+          <option value="spiralInOut5">In-out spiral (5 turns)</option>
+          <option value="spiralInOut7">In-out spiral (7 turns)</option>
+          <option value="spiralInOut9">In-out spiral (9 turns)</option>
           <option value="line">Line sweep</option>
         </select></div>
         <label>z(t)</label><input id="pathExpr" class="wide mono" value="0.72 cos(3 tau t) + 0.72 i sin(4 tau t)" />
@@ -506,14 +528,69 @@ const PATH_PRESETS={
   ellipse:{expr:'0.78 cos(tau t) + 0.46 i sin(tau t)',start:0,end:1,N:240,loop:true},
   figure8:{expr:'0.76 sin(tau t) + 0.48 i sin(2 tau t)',start:0,end:1,N:240,loop:true},
   lissajous:{expr:'0.72 cos(3 tau t) + 0.72 i sin(4 tau t)',start:0,end:1,N:960,loop:true},
+  lissajous23:{expr:'0.76 cos(2 tau t) + 0.76 i sin(3 tau t)',start:0,end:1,N:720,loop:true},
+  lissajous35:{expr:'0.75 cos(3 tau t) + 0.75 i sin(5 tau t)',start:0,end:1,N:960,loop:true},
+  lissajous45p:{expr:'0.74 cos(4 tau t + pi/6) + 0.74 i sin(5 tau t)',start:0,end:1,N:960,loop:true},
+  lissajous57:{expr:'0.73 cos(5 tau t) + 0.73 i sin(7 tau t)',start:0,end:1,N:1260,loop:true},
+  lissajous67:{expr:'0.72 cos(6 tau t + pi/8) + 0.72 i sin(7 tau t)',start:0,end:1,N:1260,loop:true},
   rose5:{expr:'0.78 cos(5 tau t) exp(i tau t)',start:0,end:1,N:360,loop:true},
   epitrochoid:{expr:'0.52 exp(i tau t) + 0.22 exp(i 6 tau t)',start:0,end:1,N:360,loop:true},
   hypotrochoid:{expr:'0.58 exp(i tau t) + 0.20 exp(-i 4 tau t)',start:0,end:1,N:360,loop:true},
   cardioid:{expr:'0.40 (1 - cos(tau t)) exp(i tau t)',start:0,end:1,N:300,loop:true},
   orbit:{expr:'0.48 + 0.20 i + 0.25 exp(i tau t)',start:0,end:1,N:240,loop:true},
   spiral:{expr:'(0.18 + 0.58 t) exp(i 3 tau t)',start:0,end:1,N:360,loop:false},
+  spiralInOut3:{expr:'0.76 (sin(pi t)^2) exp(i 3 tau t)',start:0,end:1,N:960,loop:true},
+  spiralInOut5:{expr:'0.76 (sin(pi t)^2) exp(i 5 tau t)',start:0,end:1,N:960,loop:true},
+  spiralInOut7:{expr:'0.76 (sin(pi t)^2) exp(i 7 tau t)',start:0,end:1,N:1200,loop:true},
+  spiralInOut9:{expr:'0.76 (sin(pi t)^2) exp(i 9 tau t)',start:0,end:1,N:1440,loop:true},
   line:{expr:'-0.82 + 1.64 t + 0.18 i',start:0,end:1,N:240,loop:false}
 };
+
+const MATRIX_PRESETS={
+  rotInv4:`1, 1, 1, 0
+-1, 1, 1, 0
+i, 1, 1, 0
+-i, 1, 1, 0`,
+  affineRot4:`0.55i, 1, 0, 1
+0.55i, -1, 0, 1
+0.55i, i, 0, 1
+0.55i, -i, 0, 1`,
+  zRot2:`z, 1, 1, 0
+z, -1, 1, 0`,
+  zCF4:`z, 1, 1, 0
+-z, 1, 1, 0
+i*z, 1, 1, 0
+-i*z, 1, 1, 0`,
+  zCF8:`z, 1, 1, 0
+-z, 1, 1, 0
+i*z, 1, 1, 0
+-i*z, 1, 1, 0
+0.70710678*(1+i)*z, 1, 1, 0
+0.70710678*(1-i)*z, 1, 1, 0
+-0.70710678*(1-i)*z, 1, 1, 0
+-0.70710678*(1+i)*z, 1, 1, 0`,
+  zShift4:`z + 1, 1, 1, 0
+z - 1, 1, 1, 0
+z + i, 1, 1, 0
+z - i, 1, 1, 0`,
+  quadInv4:`0.6 + 0.6i, 1, 1, 0
+0.6 - 0.6i, 1, 1, 0
+-0.6 + 0.6i, 1, 1, 0
+-0.6 - 0.6i, 1, 1, 0`,
+  zBalanced4:`z, 1, 1, 1
+-z, 1, 1, 1
+i*z, 1, 1, 1
+-i*z, 1, 1, 1`,
+  zAffineRot4:`0.45i, z, 0, 1
+0.45i, -z, 0, 1
+0.45i, i*z, 0, 1
+0.45i, -i*z, 0, 1`,
+  zShiftedCF4:`1 + z, 1, 1, 0
+1 - z, 1, 1, 0
+1 + i*z, 1, 1, 0
+1 - i*z, 1, 1, 0`
+};
+function applyMatrixPreset(name){if(!name)return;const p=MATRIX_PRESETS[name];if(!p)return;$('matrixAlphabet').value=p;refreshAfterMathChange(false)}
 function applyPathPreset(name){const p=PATH_PRESETS[name];if(!p)return;$('pathExpr').value=p.expr;$('tStart').value=p.start;$('tEnd').value=p.end;$('pathN').value=p.N;$('endpoint').checked=false;$('loopPath').checked=p.loop;animFrame=0;trail=[];fixedIds=previewIds=completeIds=null;rebuildPath();if($('animMode').value==='path')renderAnimationFrame()}
 function rebuildPath(){pathPoints=[];try{pathFn=compileExpr($('pathExpr').value);$('pathError').textContent='';const N=Math.max(1,parseInt($('pathN').value)||1),a=Number($('tStart').value),b=Number($('tEnd').value),incl=$('endpoint').checked;const denom=incl?Math.max(1,N-1):N;const drawN=Math.min(N,3000);for(let j=0;j<drawN;j++){const k=Math.min(N-1,Math.floor(j*N/drawN)),t=N===1?a:a+(b-a)*k/denom;pathPoints.push(pathFn({t,k,N}))}drawOverlays();return true}catch(e){pathFn=null;$('pathError').textContent=e.message;return false}}
 function pathZFor(k){if(!pathFn&&!rebuildPath())return getZ();const N=Math.max(1,parseInt($('pathN').value)||1),a=Number($('tStart').value),b=Number($('tEnd').value),den=$('endpoint').checked?Math.max(1,N-1):N,t=N===1?a:a+(b-a)*k/den;return pathFn({t,k,N})}
@@ -530,7 +607,7 @@ async function compositeSnapshot(){const c=document.createElement('canvas');c.wi
 async function exportPNG(){const W=Math.max(16,parseInt($('exportW').value)||1920),H=Math.max(16,parseInt($('exportH').value)||1080);if(W*H>50000000&&!confirm('This export is very large and may use substantial memory. Continue?'))return;const c=document.createElement('canvas');c.width=W;c.height=H;const ctx=c.getContext('2d');if(!$('transparentExport').checked){ctx.fillStyle=$('bgColor').value;ctx.fillRect(0,0,W,H)}const oldCam={center:cams.out.center,zoom:cams.out.zoom},scale=Math.min(W/$('outputPane').clientWidth,H/$('outputPane').clientHeight),ecam={center:oldCam.center,zoom:oldCam.zoom*scale};if($('exportAxes').checked)drawAxes(ctx,c,ecam,'out',1);const f=currentFamily||countForUI();if(f&&renderedChunks.length){const size=Number($('pointSize').value)*scale,alpha=Number($('pointOpacity').value),z=getZ();ctx.globalAlpha=alpha;for(const ch of renderedChunks)for(const id of ch){const ev=evalDescriptor(id,f,z);ctx.fillStyle=colorFor(ev.q,f);for(const raw of ev.values||[]){const v=transformOutput(raw);if(!v||!Number.isFinite(v.re)||!Number.isFinite(v.im))continue;const [x,y]=complexToScreen(v,ecam,W,H,'out');if(x<0||x>W||y<0||y>H)continue;ctx.beginPath();ctx.arc(x,y,size/2,0,Math.PI*2);ctx.fill()}}ctx.globalAlpha=1}if($('exportPath').checked&&$('animMode').value==='path'&&pathPoints.length){ctx.strokeStyle='#c0cad080';ctx.beginPath();pathPoints.forEach((p,j)=>{const q=complexToScreen(p,ecam,W,H,'out');j?ctx.lineTo(...q):ctx.moveTo(...q)});ctx.stroke()}if($('exportInput').checked&&$('showInput').checked&&$('layout').value==='combined'){const q=complexToScreen(getZ(),ecam,W,H,'out'),r=Number($('inputSize').value)*scale;ctx.fillStyle=$('inputColor').value;ctx.beginPath();ctx.arc(...q,r,0,Math.PI*2);ctx.fill()}const a=document.createElement('a');a.download=`function-family-${Date.now()}.png`;a.href=c.toDataURL('image/png');a.click()}
 const BOOKMARK_STORAGE_KEY='pveBookmarksV2';
 const BOOKMARK_CONTROL_IDS=[
-  'generatorType','evaluationType','alphabet','degree','transitionMode','transitionMatrix','sparseMode','sparseCount','sparseGap','integerSign','integerBound','sumMode','sumA','sumB','l1Mode','l1A','l1B','weightedMode','weightedA','weightedB','permValues','partitionN','partitionMaxPart','partitionMaxParts','matrixAlphabet','basisType','basisExpr','factorPreset','factorExpr','recurrenceVariant','initialWExpr','quadraticVariant','recurrenceExpr','matrixObservation','transform','precision','zRe','zIm','renderDrag','hoverInput','hoverBehavior','hoverBudget','showInput','inputSize','inputColor','inputOutline','crosshair','keyStep',
+  'generatorType','evaluationType','alphabet','degree','transitionMode','transitionMatrix','sparseMode','sparseCount','sparseGap','integerSign','integerBound','sumMode','sumA','sumB','l1Mode','l1A','l1B','weightedMode','weightedA','weightedB','permValues','partitionN','partitionMaxPart','partitionMaxParts','matrixPreset','matrixAlphabet','basisType','basisExpr','factorPreset','factorExpr','recurrenceVariant','initialWExpr','quadraticVariant','recurrenceExpr','matrixObservation','transform','precision','zRe','zIm','renderDrag','hoverInput','hoverBehavior','hoverBudget','showInput','inputSize','inputColor','inputOutline','crosshair','keyStep',
   'layout','renderStyle','pointSize','pointOpacity','pointColor','colorMode','tone','exposure','bgColor','renderAmount','customAmount','seed',
   'autoFit','lockCamera','outRealDir','outImagDir','inRealDir','inImagDir','showAxes','showUnitCircle',
   'animMode','pathPreset','pathExpr','tStart','tEnd','pathN','endpoint','loopPath','pathFps','pathRenderMode','previewBudget','fixedSubset','showPath','showTrail','trailLength','trailOpacity',
@@ -584,7 +661,7 @@ $('alphabetPreset').onchange=()=>{let v=$('alphabetPreset').value;if(v.startsWit
 ['alphabet','degree','transform'].forEach(bindRestart);$('precision').onchange=()=>refreshAfterMathChange(false);
 $('evaluationType').addEventListener('change',()=>{reconcileGeneratorForEvaluation();updateFamilyUI();refreshAfterMathChange(false)});
 $('generatorType').addEventListener('change',()=>{reconcileEvaluationForGenerator();updateFamilyUI();refreshAfterMathChange(false)});
-['transitionMode','transitionMatrix','sparseMode','sparseCount','sparseGap','integerSign','integerBound','sumMode','sumA','sumB','l1Mode','l1A','l1B','weightedMode','weightedA','weightedB','permValues','partitionN','partitionMaxPart','partitionMaxParts','matrixAlphabet','basisType','basisExpr','factorPreset','factorExpr','recurrenceVariant','initialWExpr','quadraticVariant','recurrenceExpr','matrixObservation'].forEach(id=>$(id).addEventListener('change',()=>{updateFamilyUI();refreshAfterMathChange(false)}));
+['transitionMode','transitionMatrix','sparseMode','sparseCount','sparseGap','integerSign','integerBound','sumMode','sumA','sumB','l1Mode','l1A','l1B','weightedMode','weightedA','weightedB','permValues','partitionN','partitionMaxPart','partitionMaxParts','matrixPreset','matrixAlphabet','basisType','basisExpr','factorPreset','factorExpr','recurrenceVariant','initialWExpr','quadraticVariant','recurrenceExpr','matrixObservation'].forEach(id=>$(id).addEventListener('change',()=>{updateFamilyUI();refreshAfterMathChange(false)}));
 $('renderBtn').onclick=()=>requestRender(true);$('pauseBtn').onclick=()=>{paused=!paused;$('pauseBtn').textContent=paused?'Resume':'Pause'};$('clearBtn').onclick=clearAll;$('newSeed').onclick=()=>{$('seed').value=Math.floor(Math.random()*2**32);refreshAfterMathChange(false)};
 $('renderAmount').onchange=()=>{$('customAmountRow').style.display=$('renderAmount').value==='custom'?'flex':'none'};
 ['pointSize','pointOpacity','pointColor','exposure','bgColor'].forEach(id=>$(id).addEventListener('input',redrawProcessed));$('colorMode').addEventListener('change',()=>{if(currentFamily&&chooseBackend(currentFamily)!==activeBackend)requestRender(false);else redrawProcessed()});['renderStyle','tone'].forEach(id=>$(id).addEventListener('change',redrawProcessed));
@@ -593,7 +670,7 @@ for(const [r,i] of [[$('outRealDir'),$('outImagDir')],[$('inRealDir'),$('inImagD
 ['inputSize','inputColor','inputOutline','crosshair','showInput','showTrail','trailLength','trailOpacity','showPath'].forEach(id=>$(id).addEventListener('input',drawOverlays));
 ['zRe','zIm'].forEach(id=>$(id).addEventListener('change',()=>{drawOverlays();if($('animMode').value==='static')requestRender(true)}));
 $('animMode').onchange=()=>{$('pathControls').style.display=$('animMode').value==='path'?'block':'none';$('degreeControls').style.display=$('animMode').value==='degree'?'block':'none';animPlaying=false;$('playBtn').textContent='Play';clearInterval(animTimer);clearTimeout(completeAdvanceTimer);renderToken++;animFrame=0;trail=[];fixedIds=previewIds=completeIds=null;updateInputControlState();if($('animMode').value==='path')rebuildPath()};
-$('pathPreset').onchange=()=>applyPathPreset($('pathPreset').value);['pathExpr','tStart','tEnd','pathN','endpoint'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='pathExpr')$('pathPreset').value='';fixedIds=previewIds=completeIds=null;trail=[];rebuildPath();if($('animMode').value==='path')renderAnimationFrame()}));$('pathRenderMode').onchange=()=>{renderToken++;clearTimeout(completeAdvanceTimer);fixedIds=previewIds=completeIds=null;if($('animMode').value==='path')renderAnimationFrame()};$('playBtn').onclick=()=>{if(!animPlaying&&$('animMode').value==='path'&&$('pathRenderMode').value==='complete'){let f;try{f=makeFamily()}catch(e){toast(e.message);return}const N=BigInt(Math.max(1,parseInt($('pathN').value)||1));maybeWarnAnimation(f.total,N,playAnimation,()=>{$('pathRenderMode').value='preview';playAnimation()})}else playAnimation()};$('prevFrame').onclick=()=>advanceFrame(-1);$('nextFrame').onclick=()=>advanceFrame(1);$('restartAnim').onclick=()=>{renderToken++;clearTimeout(completeAdvanceTimer);animFrame=0;trail=[];renderAnimationFrame()};
+$('matrixPreset').onchange=()=>applyMatrixPreset($('matrixPreset').value);$('matrixAlphabet').addEventListener('input',()=>{$('matrixPreset').value='';});$('pathPreset').onchange=()=>applyPathPreset($('pathPreset').value);['pathExpr','tStart','tEnd','pathN','endpoint'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='pathExpr')$('pathPreset').value='';fixedIds=previewIds=completeIds=null;trail=[];rebuildPath();if($('animMode').value==='path')renderAnimationFrame()}));$('pathRenderMode').onchange=()=>{renderToken++;clearTimeout(completeAdvanceTimer);fixedIds=previewIds=completeIds=null;if($('animMode').value==='path')renderAnimationFrame()};$('playBtn').onclick=()=>{if(!animPlaying&&$('animMode').value==='path'&&$('pathRenderMode').value==='complete'){let f;try{f=makeFamily()}catch(e){toast(e.message);return}const N=BigInt(Math.max(1,parseInt($('pathN').value)||1));maybeWarnAnimation(f.total,N,playAnimation,()=>{$('pathRenderMode').value='preview';playAnimation()})}else playAnimation()};$('prevFrame').onclick=()=>advanceFrame(-1);$('nextFrame').onclick=()=>advanceFrame(1);$('restartAnim').onclick=()=>{renderToken++;clearTimeout(completeAdvanceTimer);animFrame=0;trail=[];renderAnimationFrame()};
 $('exportPreset').onchange=()=>{const v=$('exportPreset').value;if(v){const [w,h]=v.split('x');$('exportW').value=w;$('exportH').value=h}};$('exportBtn').onclick=exportPNG;$('presentationBtn').onclick=()=>{document.body.classList.add('presentation');setTimeout(resizeAll,0)};
 function defaultBookmarkName(){const d=new Date(),date=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');return `Bookmark ${date} ${d.toLocaleTimeString()}`}
 $('saveBookmark').onclick=()=>{const n=$('bookmarkName').value.trim()||defaultBookmarkName(),b=loadBookmarks();b[n]=stateForBookmark();const localOk=persistBookmarks(b);loadBookmarks(n);$('bookmarkName').value=n;toast(localOk?'Bookmark saved':'Bookmark saved in page URL (browser storage unavailable)')};$('loadBookmark').onclick=()=>{const b=loadBookmarks(),n=$('bookmarkList').value;if(b[n]){applyBookmark(b[n]);toast(`Loaded ${n}`)}};$('deleteBookmark').onclick=()=>{const b=loadBookmarks(),n=$('bookmarkList').value;if(n){delete b[n];persistBookmarks(b);loadBookmarks();toast(`Deleted ${n}`)}};
