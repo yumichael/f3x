@@ -605,12 +605,79 @@ $('saveBookmark').onclick=()=>{const n=$('bookmarkName').value.trim()||`Bookmark
 $('pinCompare').onclick=async()=>{const c=await compositeSnapshot();$('compareImg').src=c.toDataURL();$('comparePanel').style.display='block';$('outputPane').style.width='50%';$('comparePanel').style.opacity=$('compareOpacity').value;toast('Pinned current view')};$('unpinCompare').onclick=()=>{$('comparePanel').style.display='none';$('outputPane').style.width='';$('overlayCompare').checked=false};$('overlayCompare').onchange=()=>{$('comparePanel').style.pointerEvents='none';if($('overlayCompare').checked){$('comparePanel').style.inset='0';$('comparePanel').style.background='transparent';$('comparePanel').style.border='0'}else{$('comparePanel').style.inset='0 0 0 50%';$('comparePanel').style.background='#050608';$('comparePanel').style.borderLeft='1px solid #333'}};$('compareOpacity').oninput=()=>$('comparePanel').style.opacity=$('compareOpacity').value;
 
 // pointer interactions
-let hoverPreviewRaf=0;
-function renderMovingPreview(){if($('animMode').value!=='static')return;const old=$('renderAmount').value,oc=$('customAmount').value;$('renderAmount').value='custom';$('customAmount').value=Math.min(50000,Number($('previewBudget').value)||50000);requestRender(false);$('renderAmount').value=old;$('customAmount').value=oc}
+// Movement previews deliberately reuse the same sampled family members from frame to frame.
+// Restarting a progressive render on every pointermove caused generalized CPU families to be
+// cancelled repeatedly before enough points reached the canvas.
+let hoverPreviewRaf=0,movingPreviewCache=null;
+function panePoint(e,el){const r=el.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top]}
+function movingPreviewIds(f,backend){
+  const requested=Math.max(1,Math.floor(Number($('previewBudget').value)||50000));
+  // CPU generalized evaluation can be much heavier than a shader evaluation. Keep pointer
+  // motion responsive while still allowing a dense GPU preview.
+  const practical=backend==='gpu'?requested:Math.min(requested,12000);
+  const nBig=BigInt(practical)<f.total?BigInt(practical):f.total;
+  const n=Number(nBig);
+  const seed=Number($('seed').value)>>>0;
+  if(movingPreviewCache&&movingPreviewCache.family===f&&movingPreviewCache.backend===backend&&movingPreviewCache.seed===seed&&movingPreviewCache.n===n)return movingPreviewCache.ids;
+  const perm=makePermuter(f.total,seed);
+  let ids;
+  if(backend==='gpu'){
+    ids=new Uint32Array(n);
+    for(let j=0;j<n;j++)ids[j]=perm.at(j);
+  }else{
+    ids=new Array(n);
+    if(perm instanceof Permuter32){for(let j=0;j<n;j++)ids[j]=perm.at(j)}
+    else{for(let j=0;j<n;j++)ids[j]=perm.at(BigInt(j))}
+  }
+  movingPreviewCache={family:f,backend,seed,n,ids};
+  return ids;
+}
+function renderMovingPreview(){
+  if($('animMode').value!=='static')return;
+  let f;
+  try{f=currentFamily||makeFamily()}catch(e){toast(e.message,2000);return}
+  const backend=chooseBackend(f),ids=movingPreviewIds(f,backend),z=getZ();
+  // Stop any in-flight progressive render. The interactive frame below is complete in one pass.
+  renderToken++;
+  currentFamily=f;activeBackend=backend;currentPerm=null;paused=false;currentSampled=BigInt(ids.length)<f.total;
+  renderedChunks=[ids];processed=ids.length;totalTarget=ids.length;startTime=now();lastRateTime=startTime;lastRateCount=0;
+  $('backendPill').textContent=`Backend: ${backend==='gpu'?'GPU f32 shader':'CPU f64'}`;
+  if(glr)glr.clear();clearCPU();
+  if(backend==='gpu')glr.draw(ids,f,z,false);else cpuDraw(ids,f,z,false);
+  updateHUD('Interactive preview');drawOverlays();
+}
 function queueMovingPreview(){if(!hoverPreviewRaf)hoverPreviewRaf=requestAnimationFrame(()=>{hoverPreviewRaf=0;renderMovingPreview()})}
-function attachPaneInteraction(el,which){let mode=null,last=[0,0];const controlsInput=()=>which==='in'||(which==='out'&&$('layout').value!=='split');el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);last=[e.offsetX,e.offsetY];const cam=which==='out'?cams.out:cams.in,layout=$('layout').value,z=getZ(),canvas=which==='out'?overlay:inputCanvas,q=complexToScreen(z,cam,canvas.clientWidth,canvas.clientHeight,which),near=$('showInput').checked&&Math.hypot(e.offsetX-q[0],e.offsetY-q[1])<Number($('inputSize').value)+8;if($('hoverInput').checked&&controlsInput()&&$('animMode').value==='static')mode='pan';else mode=((which==='in')||(which==='out'&&layout==='combined'))&&near?'z':'pan'});el.addEventListener('pointermove',e=>{const cam=which==='out'?cams.out:cams.in;if(!mode){if($('hoverInput').checked&&controlsInput()&&$('animMode').value==='static'){const p=screenToComplex(e.offsetX,e.offsetY,cam,el.clientWidth,el.clientHeight,which);$('zRe').value=p.re;$('zIm').value=p.im;drawOverlays();queueMovingPreview()}return}const dx=e.offsetX-last[0],dy=e.offsetY-last[1];last=[e.offsetX,e.offsetY];if(mode==='pan'){const d=screenDeltaToComplex(dx,dy,cam,which);cam.center=cam.center.sub(d);redrawProcessed()}else{const p=screenToComplex(e.offsetX,e.offsetY,cam,el.clientWidth,el.clientHeight,which);$('zRe').value=p.re;$('zIm').value=p.im;drawOverlays();if($('renderDrag').checked)queueMovingPreview()}});el.addEventListener('pointerup',()=>{const was=mode;mode=null;if(was==='z'&&$('animMode').value==='static')requestRender(true)});el.addEventListener('pointercancel',()=>{mode=null});el.addEventListener('wheel',e=>{e.preventDefault();const cam=which==='out'?cams.out:cams.in,before=screenToComplex(e.offsetX,e.offsetY,cam,el.clientWidth,el.clientHeight,which);cam.zoom*=Math.exp(-e.deltaY*.001);cam.zoom=clamp(cam.zoom,1e-5,1e9);const after=screenToComplex(e.offsetX,e.offsetY,cam,el.clientWidth,el.clientHeight,which);cam.center=cam.center.add(before.sub(after));redrawProcessed()},{passive:false})}
+function attachPaneInteraction(el,which){
+  let mode=null,last=[0,0];
+  const controlsInput=()=>which==='in'||(which==='out'&&$('layout').value!=='split');
+  el.addEventListener('pointerdown',e=>{
+    const pt=panePoint(e,el);last=pt;el.setPointerCapture(e.pointerId);
+    const cam=which==='out'?cams.out:cams.in,layout=$('layout').value,z=getZ(),q=complexToScreen(z,cam,el.clientWidth,el.clientHeight,which),near=$('showInput').checked&&Math.hypot(pt[0]-q[0],pt[1]-q[1])<Number($('inputSize').value)+8;
+    if($('hoverInput').checked&&controlsInput()&&$('animMode').value==='static')mode='pan';
+    else mode=((which==='in')||(which==='out'&&layout==='combined'))&&near?'z':'pan';
+  });
+  el.addEventListener('pointermove',e=>{
+    const cam=which==='out'?cams.out:cams.in,pt=panePoint(e,el);
+    if(!mode){
+      if($('hoverInput').checked&&controlsInput()&&$('animMode').value==='static'){
+        const p=screenToComplex(pt[0],pt[1],cam,el.clientWidth,el.clientHeight,which);$('zRe').value=p.re;$('zIm').value=p.im;drawOverlays();queueMovingPreview();
+      }
+      return;
+    }
+    const dx=pt[0]-last[0],dy=pt[1]-last[1];last=pt;
+    if(mode==='pan'){
+      const d=screenDeltaToComplex(dx,dy,cam,which);cam.center=cam.center.sub(d);redrawProcessed();
+    }else{
+      const p=screenToComplex(pt[0],pt[1],cam,el.clientWidth,el.clientHeight,which);$('zRe').value=p.re;$('zIm').value=p.im;drawOverlays();if($('renderDrag').checked)queueMovingPreview();
+    }
+  });
+  el.addEventListener('pointerup',()=>{const was=mode;mode=null;movingPreviewCache=null;if(was==='z'&&$('animMode').value==='static')requestRender(true)});
+  el.addEventListener('pointercancel',()=>{mode=null;movingPreviewCache=null});
+  el.addEventListener('pointerleave',()=>{if(!mode&&$('hoverInput').checked)movingPreviewCache=null});
+  el.addEventListener('wheel',e=>{e.preventDefault();const cam=which==='out'?cams.out:cams.in,pt=panePoint(e,el),before=screenToComplex(pt[0],pt[1],cam,el.clientWidth,el.clientHeight,which);cam.zoom*=Math.exp(-e.deltaY*.001);cam.zoom=clamp(cam.zoom,1e-5,1e9);const after=screenToComplex(pt[0],pt[1],cam,el.clientWidth,el.clientHeight,which);cam.center=cam.center.add(before.sub(after));redrawProcessed()},{passive:false});
+}
 attachPaneInteraction($('outputPane'),'out');attachPaneInteraction($('inputPane'),'in');
-$('hoverInput').onchange=()=>{if($('hoverInput').checked){$('renderDrag').checked=true;$('renderDrag').disabled=true;toast('Hover-input mode always renders while the pointer moves')}else $('renderDrag').disabled=false};
+$('hoverInput').onchange=()=>{movingPreviewCache=null;if($('hoverInput').checked){$('renderDrag').checked=true;$('renderDrag').disabled=true;toast('Hover-input mode always renders while the pointer moves')}else $('renderDrag').disabled=false};
 // Pause animation advancement while native select menus are being interacted with. This avoids browser menu flicker under continuous canvas updates.
 const sidebar=$('sidebar');let uiResumeTimer=null;function pauseForMenu(){animationUiPaused=true;clearTimeout(uiResumeTimer)}function resumeAfterMenu(){clearTimeout(uiResumeTimer);uiResumeTimer=setTimeout(()=>{animationUiPaused=false;if(animPlaying&&$('animMode').value==='path'&&$('pathRenderMode').value==='complete'&&processed>=totalTarget)renderAnimationFrame()},100)}
 sidebar.addEventListener('pointerdown',e=>{if(e.target instanceof HTMLSelectElement)pauseForMenu()});sidebar.addEventListener('focusin',e=>{if(e.target instanceof HTMLSelectElement)pauseForMenu()});sidebar.addEventListener('change',e=>{if(e.target instanceof HTMLSelectElement)resumeAfterMenu()});sidebar.addEventListener('focusout',e=>{if(e.target instanceof HTMLSelectElement)resumeAfterMenu()});
