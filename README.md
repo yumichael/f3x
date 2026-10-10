@@ -97,12 +97,35 @@ The path itself is hidden by default while the input trail remains visible.
 
 ## Precision and performance
 
-The app has two broad execution paths:
+Points mode uses **batched WebGL2 drawing** across the general evaluators. Möbius compositions, rational functions, and linear combinations have cached double-precision evaluation:
 
-- a GPU-accelerated path for the unrestricted ordinary polynomial case where the browser can support it;
-- a general CPU double-precision path for the broader family/evaluator combinations.
+- **Möbius words:** decode the selected words once and build a prefix tree. Each frame evaluates the matrix alphabet once and each distinct word prefix once, sharing intermediate results across descendants. This supports constant and `z`-dependent matrix entries, adjacency constraints, exact/up-to lengths, and sampled families with BigInt identifiers. An intermediate pole still invalidates the word and its descendants.
+- **Independent P/Q pairs:** store references to distinct polynomials and evaluate each used polynomial once per frame. The default 15,876 pairs contain just 126 distinct polynomials. Triangular powers and other basis values are shared across those evaluations. Ordinary powers retain Horner evaluation.
+- **Other rational and linear families:** cache coefficient arrays and share basis values across the selected family. Other evaluators also benefit from cached point colors and GPU drawing.
+- **Stable frames:** retain the family, selected-word structure, colors, and typed work buffers across animation frames. Camera and appearance changes reuse evaluated values when `z` is unchanged. Mathematical settings rebuild the relevant caches; changing a preview or fixed-subset budget immediately updates the selection.
+- **GPU resources:** upload a packed buffer of visible point positions and colors, then draw it in one batch per chunk. Density and Voronoi render targets are allocated only when needed.
 
-The UI reports the active backend. Sampling and fixed-subset modes are provided because many finite families grow exponentially or combinatorially, so exhaustive rendering can quickly become impractical even when individual function evaluations are cheap. Voronoi mode evaluates its sites using the normal family machinery and then performs the nearest-site raster stage on the GPU when the browser supports the required WebGL2 floating-point render targets.
+`Auto: GPU drawing / fast evaluation` also permits the existing f32 GPU evaluator for supported ordinary polynomial families. `f64 evaluation + GPU drawing` keeps mathematical evaluation in JavaScript double precision while still using the GPU to draw Points. In the general Points path, output transforms and camera projection happen in double precision before screen coordinates are converted to f32. Colors and rasterization use GPU precision. Circular GPU point edges can differ slightly from Canvas 2D rasterization. If WebGL2 is unavailable, cached evaluation still works and Points fall back to Canvas 2D; unusually large points exceeding the GPU's supported size also use that fallback.
+
+For smooth animation, use **Fixed Sample Subset** or **Realtime Preview**, then increase the corresponding point budget. The HUD reports CPU frame work in milliseconds for directly rendered animation frames; it includes evaluation, projection, and draw submission, but does not measure GPU completion or displayed FPS. At a 30 FPS target the whole frame has about 33 ms, so leave room for browser drawing and compositing. The first frame after changing a family, subset, or coloring may take longer while caches are built. Very large initial selections can briefly block the UI; retained caches also trade memory for speed. Sampling remains important because family sizes grow exponentially.
+
+Complete-frame animation reuses the selected IDs and caches for up to one million members in the optimized Points evaluators. Larger complete renders use cancellable chunks, with higher preparation overhead. The app remains a self-contained HTML file: no server, worker files, or external dependencies are required.
+
+Density rendering keeps its existing evaluation path. Voronoi mode evaluates sites on the CPU and performs its screen-space nearest-site stage on the GPU when WebGL2 floating-point render targets are available.
+
+
+### Validation and measured frame costs
+
+In headless Chromium at a 950×800 output size with software WebGL, the optimized Points path produced these measurements. Warm figures are medians of seven changing-input frames and include CPU evaluation, projection, clearing, HUD updates, and draw submission; they exclude the input overlay and are not displayed-FPS measurements. Hardware GPU results and browser scheduling will differ.
+
+| Family | Members | First frame, including preparation | Warm CPU frame work |
+| --- | ---: | ---: | ---: |
+| Default triangular-basis rational pairs | 15,876 | 127 ms | 2.8 ms |
+| Four-symbol z-dependent Möbius words, up to D=7 | 21,845 | 114 ms | 6.6 ms |
+| Same, up to D=8 | 87,381 | 437 ms | 11.6 ms |
+| Same, up to D=9 | 349,525 | 1,677 ms | 43.0 ms |
+
+Numerical regression checks compared 15,972 outputs across 54 configurations with the original descriptor evaluator, with no observed numerical differences. Coverage included all matrix presets, constrained words, exact and up-to lengths, the empty word, intermediate poles, BigInt samples, and rational functions from six generators over five bases. Browser checks also covered Points/density/Voronoi switching, ordinary polynomial GPU evaluation, matrix eigenvalue pairs, budget changes, cache invalidation, Canvas fallback, and composite snapshots.
 
 ## Expression language
 
