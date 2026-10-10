@@ -431,7 +431,16 @@ function decodeWord(rank){
   const word=new Array(len);for(let j=len-1;j>=0;j--){word[j]=x%K;x=Math.floor(x/K)}return word;
 }
 function decode(rank){const word=decodeWord(rank);return {degree:word.length-1,word,idx:word,coeffs:word.map(i=>new C(i,0)),id:BigInt(rank),support:word.length}}return {generator:'transformWords',matrixDefs:defs,D,upTo,total,decode,K,L:K,alphabet:Array.from({length:K},(_,i)=>new C(i,0)),zeroIndex:-1,nonzero:Array.from({length:K},(_,i)=>i),gpuCompatible:false};}
-function buildPairFamily(){const base=buildCoeffWordFamily(),total=base.total*base.total;function decode(rank){const x=BigInt(rank),li=x%base.total,ri=x/base.total,left=decodeCoeffWord(li,base),right=decodeCoeffWord(ri,base);return {degree:Math.max(left.degree,right.degree),coeffs:left.coeffs,idx:left.idx,id:x,left,right,pair:true,support:(left.support||left.coeffs.filter(c=>!isZeroC(c)).length)+(right.support||right.coeffs.filter(c=>!isZeroC(c)).length)}}return {...base,generator:'polyPair',base,total,decode,gpuCompatible:false};}
+function buildPairFamily(){
+  const base=buildCoeffWordFamily(),total=base.total*base.total,polynomials=new Map();
+  function polynomial(id){
+    let q=polynomials.get(id);
+    if(!q){q=decodeCoeffWord(id,base);q.support=q.support??q.coeffs.filter(c=>!isZeroC(c)).length;polynomials.set(id,q)}
+    return q;
+  }
+  function decode(rank){const x=BigInt(rank),left=polynomial(x%base.total),right=polynomial(x/base.total);return {degree:Math.max(left.degree,right.degree),coeffs:left.coeffs,idx:left.idx,id:x,left,right,pair:true,support:left.support+right.support}}
+  return {...base,generator:'polyPair',base,total,decode,gpuCompatible:false};
+}
 function decorateFamily(f){f.evaluation=$('evaluationType').value;f.basisType=$('basisType').value;f.basisFn=f.basisType==='custom'?compileExpr($('basisExpr').value):null;f.factorFn=$('factorPreset').value==='custom'?compileExpr($('factorExpr').value):null;f.initialFn=compileExpr($('initialWExpr').value||'z');f.recurrenceFn=f.evaluation==='customRecurrence'?compileExpr($('recurrenceExpr').value):null;if(f.evaluation==='mobius'||f.evaluation==='matrix'){if(f.generator!=='transformWords')throw new Error('Möbius and matrix-product evaluation require the Transformation / matrix words generator.')}if(f.evaluation==='rational'&&f.generator==='transformWords')throw new Error('Rational evaluation requires a coefficient-like generator.');f.gpuCompatible=!!(f.gpuCompatible&&f.generator==='coeffWords'&&f.evaluation==='linear'&&f.basisType==='powers');return f}
 function buildFamily(){let f;switch($('generatorType').value){case'coeffWords':f=buildCoeffWordFamily();break;case'sparse':f=buildSparseFamily();break;case'integer':f=buildIntegerFamily();break;case'permutation':f=buildPermutationFamily();break;case'partition':f=buildPartitionFamily();break;case'polyPair':f=buildPairFamily();break;case'transformWords':f=buildTransformWordFamily();break;default:f=buildCoeffWordFamily()}return decorateFamily(f)}
 function decodeId(id,f){if(f.decode)return f.decode(id);return decodeCoeffWord(id,f)}
@@ -535,6 +544,7 @@ function makeFamily(){
 function pointColorKey(){return $('colorMode').value+'|'+$('pointColor').value}
 function fastPointPlan(ids,f){
   let p=f.pointPlans.get(ids);if(p)return p;
+  const colorMode=Number($('colorMode').value),singleColor=hexRgb($('pointColor').value);
   const n=ids.length,kind=f.evaluation==='mobius'?'mobius':f.evaluation==='rational'?'rational':f.evaluation==='linear'?'linear':'general';
   p={kind,n,colors:new Float32Array(n*3),colorKey:pointColorKey(),values:new Float64Array(n*2),zr:NaN,zi:NaN};
   const parents=[0],symbols=[0],edges=new Map(),leaves=new Uint32Array(n);
@@ -546,7 +556,7 @@ function fastPointPlan(ids,f){
     polys.push({data,indices});if(key!==null)polyMap.set(key,j);return j;
   }
   for(let i=0;i<n;i++){
-    const q=decodeId(ids[i],f);p.colors.set(colorVecFor(q,f),i*3);
+    const q=decodeId(ids[i],f);p.colors.set(colorVecFor(q,f,colorMode,singleColor),i*3);
     if(kind==='mobius'){
       let parent=0;for(const s of q.word){const key=parent*f.K+s;let node=edges.get(key);if(node===undefined){node=parents.length;edges.set(key,node);parents.push(parent);symbols.push(s)}parent=node}leaves[i]=parent;
     }else if(kind==='rational'&&q.pair){
@@ -603,7 +613,7 @@ function evaluatePointPlan(p,f,z){
 // This avoids losing small separations around a large camera center in f32.
 function drawFastPoints(ids,f,z){
   const p=fastPointPlan(ids,f),key=pointColorKey();
-  if(p.colorKey!==key){for(let i=0;i<ids.length;i++)p.colors.set(colorVecFor(decodeId(ids[i],f),f),i*3);p.colorKey=key}
+  if(p.colorKey!==key){const mode=Number($('colorMode').value),single=hexRgb($('pointColor').value);for(let i=0;i<ids.length;i++)p.colors.set(colorVecFor(decodeId(ids[i],f),f,mode,single),i*3);p.colorKey=key}
   if(p.kind!=='general')evaluatePointPlan(p,f,z);
   resize2d(cpu);const dpr=window.devicePixelRatio||1,w=cpu.width,h=cpu.height,c=cams.out,dir=dirs('out'),zoom=c.zoom*dpr;
   const mode=Number($('transform').value),size=Number($('pointSize').value)*dpr,alpha=Number($('pointOpacity').value);
@@ -634,7 +644,22 @@ function resize2d(canvas){const dpr=window.devicePixelRatio||1,w=Math.max(1,Math
 function transformOutput(v){const mode=Number($('transform').value);if(mode===0)return v;if(mode===1){const d=v.re*v.re+v.im*v.im;if(d<1e-300)return null;return new C(v.re/d,-v.im/d)}if(mode===2){if(v.abs()<1e-300)return null;return v.log()}if(mode===3){const d=v.abs();if(d<1e-300)return null;return new C(v.re/d,v.im/d)}return v}
 
 // ---------- Generalized CPU rendering / coloring ----------
-function colorVecFor(q,f){const mode=Number($('colorMode').value),single=hexRgb($('pointColor').value);if(mode===0)return single;const coeffs=q.coeffs||[],count=Math.max(1,coeffs.length),sum=coeffs.reduce((a,c)=>a.add(c),new C(0,0)),weighted=coeffs.reduce((a,c,j)=>a.add(new C(c.re*(j+1),c.im*(j+1))),new C(0,0)),magSum=coeffs.reduce((a,c)=>a+c.abs(),0),weightedAbs=coeffs.reduce((a,c,j)=>a+(j+1)*c.abs(),0),nz=q.support??coeffs.filter(c=>!isZeroC(c)).length,idx=q.idx||q.word||[],changes=idx.slice(1).reduce((a,c,j)=>a+(c!==idx[j]?1:0),0);const alphabet=f.alphabet||[];const maxRe=Math.max(1e-12,...alphabet.map(c=>Math.abs(c.re)),...coeffs.map(c=>Math.abs(c.re))),maxIm=Math.max(1e-12,...alphabet.map(c=>Math.abs(c.im)),...coeffs.map(c=>Math.abs(c.im))),maxAbs=Math.max(1e-12,...alphabet.map(c=>c.abs()),...coeffs.map(c=>c.abs()));const posRe=coeffs.filter(c=>c.re>0).length,negRe=coeffs.filter(c=>c.re<0).length,posIm=coeffs.filter(c=>c.im>0).length,negIm=coeffs.filter(c=>c.im<0).length,mix=(a,b,t)=>a.map((x,j)=>x+(b[j]-x)*clamp(t,0,1)),diverge=(x,neg,pos)=>mix([.92,.92,.92],x<0?neg:pos,Math.abs(clamp(x,-1,1))),coeffHue=c=>hsv(c?c.arg()/(2*Math.PI)+.5:0,.75,1);let col=single;
+function colorVecFor(q,f,mode=Number($('colorMode').value),single=hexRgb($('pointColor').value)){
+  if(mode===0)return single;
+  const coeffs=q.coeffs||[],count=Math.max(1,coeffs.length),idx=q.idx||q.word||[],alphabet=f.alphabet||[];
+  // Only compute the statistics used by the selected coloring.
+  const sum=[4,10,11,12].includes(mode)?coeffs.reduce((a,c)=>a.add(c),new C(0,0)):null;
+  const weighted=mode===15?coeffs.reduce((a,c,j)=>a.add(new C(c.re*(j+1),c.im*(j+1))),new C(0,0)):null;
+  const magSum=mode===13||mode===17?coeffs.reduce((a,c)=>a+c.abs(),0):0;
+  const weightedAbs=mode===18?coeffs.reduce((a,c,j)=>a+(j+1)*c.abs(),0):0;
+  const nz=mode===5||mode===16?(q.support??coeffs.filter(c=>!isZeroC(c)).length):0;
+  const changes=mode===14||mode===23?idx.slice(1).reduce((a,c,j)=>a+(c!==idx[j]?1:0),0):0;
+  const maxRe=mode===10?Math.max(1e-12,...alphabet.map(c=>Math.abs(c.re)),...coeffs.map(c=>Math.abs(c.re))):0;
+  const maxIm=mode===11?Math.max(1e-12,...alphabet.map(c=>Math.abs(c.im)),...coeffs.map(c=>Math.abs(c.im))):0;
+  const maxAbs=[12,13,17,18].includes(mode)?Math.max(1e-12,...alphabet.map(c=>c.abs()),...coeffs.map(c=>c.abs())):0;
+  const posRe=mode===6?coeffs.filter(c=>c.re>0).length:0,negRe=mode===7?coeffs.filter(c=>c.re<0).length:0;
+  const posIm=mode===8?coeffs.filter(c=>c.im>0).length:0,negIm=mode===9?coeffs.filter(c=>c.im<0).length:0;
+  const mix=(a,b,t)=>a.map((x,j)=>x+(b[j]-x)*clamp(t,0,1)),diverge=(x,neg,pos)=>mix([.92,.92,.92],x<0?neg:pos,Math.abs(clamp(x,-1,1))),coeffHue=c=>hsv(c?c.arg()/(2*Math.PI)+.5:0,.75,1);let col=single;
   if(mode===1)col=hsv(Math.max(q.degree??0,0)/Math.max(1,f.D||1)*.85,.72,1);
   else if(mode===2)col=idx.length&&f.alphabet?.length?hsv((idx.at(-1)+.5)/f.alphabet.length,.75,1):coeffHue(coeffs.at(-1));
   else if(mode===3)col=idx.length&&f.alphabet?.length?hsv((idx[0]+.5)/f.alphabet.length,.75,1):coeffHue(coeffs[0]);
