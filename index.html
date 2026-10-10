@@ -241,10 +241,10 @@
         <div class="row"><label>Wall thickness</label><input id="voronoiWallThickness" type="range" min="0.5" max="6" step="0.5" value="1" class="grow"><label>Opacity</label><input id="voronoiWallOpacity" type="range" min="0" max="1" step="0.05" value="0.85" class="grow"></div>
       </div>
       <div class="row"><label>Background</label><input id="bgColor" type="color" value="#050608"></div>
-      <div class="row"><label>Render amount</label><select id="renderAmount"><option value="all">All</option><option value="10000">10,000</option><option value="100000">100,000</option><option value="1000000">1,000,000</option><option value="custom">Custom</option></select></div>
+      <div class="row"><label>Master render limit</label><select id="renderAmount"><option value="all">All</option><option value="10000">10,000</option><option value="100000">100,000</option><option value="1000000">1,000,000</option><option value="10000000">10,000,000</option><option value="100000000">100,000,000</option><option value="custom">Custom</option></select></div>
       <div class="row" id="customAmountRow" style="display:none"><label>Custom count</label><input id="customAmount" type="number" min="1" value="250000" class="grow"></div>
       <div class="row"><label>Random seed</label><input id="seed" type="number" value="123456789" class="grow"><button id="newSeed">New</button></div>
-      <div class="row"><button id="renderBtn" class="primary grow">Render</button><button id="pauseBtn">Pause</button><button id="clearBtn">Clear</button></div>
+      <div class="row"><button id="renderBtn" class="primary grow">Render all (bypass limit)</button><button id="pauseBtn">Pause</button><button id="clearBtn">Clear</button></div>
     </details>
 
     <details>
@@ -294,7 +294,7 @@
         <div class="row"><label>Samples N</label><input id="pathN" type="number" min="1" max="100000" value="960" class="small"><label><input id="endpoint" type="checkbox"> Include endpoint</label></div>
         <div class="row"><label><input id="loopPath" type="checkbox" checked> Loop</label><label>FPS</label><input id="pathFps" type="number" min="1" max="120" value="30" class="small"></div>
         <div class="row"><label>Render mode</label><select id="pathRenderMode"><option value="preview">Realtime Preview</option><option value="complete">Complete Each Frame</option><option value="fixed" selected>Fixed Sample Subset</option></select></div>
-        <div class="note">Complete Each Frame renders the entire family. Preview and Fixed Subset use the budgets below.</div>
+        <div class="note">All modes respect the Master render limit. Preview and Fixed Subset also use the budgets below.</div>
         <div class="row"><label>Preview budget</label><input id="previewBudget" type="number" min="100" value="15876" class="grow"></div>
         <div class="row"><label>Fixed subset</label><input id="fixedSubset" type="number" min="1" value="15876" class="grow"></div>
         <div class="row"><label><input id="showPath" type="checkbox"> Show path</label><label><input id="showTrail" type="checkbox" checked> Trail</label></div>
@@ -520,7 +520,7 @@ drawVoronoi(sites,colors){this.resize();if(!this.vorTex[0])this.makeVoronoiTarge
 canGPU(f){return f.total<=4294967295n&&f.D<=this.maxD&&f.alphabet.length<=this.maxK&&f.offsets.every(x=>x<=4294967295n)}
 setUniforms(p,f,z){const g=this.gl;const U=(name)=>g.getUniformLocation(p,name);g.uniform1i(U('u_K'),f.K);g.uniform1i(U('u_D'),f.D);g.uniform1i(U('u_upTo'),f.upTo?1:0);g.uniform1i(U('u_zeroIndex'),f.zeroIndex);g.uniform1i(U('u_nonzeroCount'),f.nonzero.length);const aa=new Float32Array(64);f.alphabet.forEach((c,i)=>{aa[2*i]=c.re;aa[2*i+1]=c.im});g.uniform2fv(U('u_alphabet[0]'),aa);const nz=new Int32Array(32);f.nonzero.forEach((x,i)=>nz[i]=x);g.uniform1iv(U('u_nonzeroIndices[0]'),nz);const off=new Uint32Array(65);if(f.upTo)for(let i=0;i<Math.min(65,f.offsets.length);i++)off[i]=Number(f.offsets[i]);else{off[0]=0;off[1]=Number(f.total)}g.uniform1uiv(U('u_offsets[0]'),off);g.uniform2f(U('u_z'),z.re,z.im);const c=cams.out,d=dirs('out');g.uniform2f(U('u_center'),c.center.re,c.center.im);g.uniform2f(U('u_realDir'),d.r[0],d.r[1]);g.uniform2f(U('u_imagDir'),d.i[0],d.i[1]);g.uniform2f(U('u_resolution'),this.canvas.width,this.canvas.height);g.uniform1f(U('u_zoom'),c.zoom*(window.devicePixelRatio||1));g.uniform1f(U('u_pointSize'),Number($('pointSize').value)*(window.devicePixelRatio||1));g.uniform1f(U('u_opacity'),Number($('pointOpacity').value));let mr=0,mi=0,ma=0;for(const c0 of f.alphabet){mr=Math.max(mr,Math.abs(c0.re));mi=Math.max(mi,Math.abs(c0.im));ma=Math.max(ma,Math.hypot(c0.re,c0.im))}g.uniform1f(U('u_maxCoeffAbsRe'),mr);g.uniform1f(U('u_maxCoeffAbsIm'),mi);g.uniform1f(U('u_maxCoeffAbs'),ma);g.uniform1i(U('u_colorMode'),Number($('colorMode').value));g.uniform1i(U('u_transform'),Number($('transform').value));const cc=hexRgb($('pointColor').value);g.uniform3f(U('u_singleColor'),...cc)}
 clear(){this.resize();const g=this.gl;g.bindFramebuffer(g.FRAMEBUFFER,null);const bg=hexRgb($('bgColor').value);g.clearColor(bg[0],bg[1],bg[2],1);g.clear(g.COLOR_BUFFER_BIT);if($('renderStyle').value==='density'){if(!this.densityTex)this.makeDensityTarget();g.bindFramebuffer(g.FRAMEBUFFER,this.densityFbo);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);g.bindFramebuffer(g.FRAMEBUFFER,null)}}
-draw(ids,f,z,clear=false){this.resize();const g=this.gl,style=$('renderStyle').value;if(clear)this.clear();const p=style==='density'?this.densityProg:this.pointProg;if(style==='density')g.bindFramebuffer(g.FRAMEBUFFER,this.densityFbo);else g.bindFramebuffer(g.FRAMEBUFFER,null);g.viewport(0,0,this.canvas.width,this.canvas.height);g.useProgram(p);this.setUniforms(p,f,z);g.bindVertexArray(this.vao);g.bindBuffer(g.ARRAY_BUFFER,this.idBuf);if(this.lastIdSource!==ids||this.lastIdLength!==ids.length){g.bufferData(g.ARRAY_BUFFER,ids,g.STREAM_DRAW);this.lastIdSource=ids;this.lastIdLength=ids.length;}g.enable(g.BLEND);if(style==='density'){g.blendFunc(g.ONE,g.ONE);g.uniform1f(g.getUniformLocation(p,'u_densityWeight'),this.floatDensity?1:1/255)}else g.blendFunc(g.SRC_ALPHA,g.ONE_MINUS_SRC_ALPHA);g.drawArrays(g.POINTS,0,ids.length);g.disable(g.BLEND);g.bindVertexArray(null);g.bindFramebuffer(g.FRAMEBUFFER,null);if(style==='density')this.presentDensity();}
+draw(ids,f,z,clear=false,deferPresent=false){this.resize();const g=this.gl,style=$('renderStyle').value;if(clear)this.clear();const p=style==='density'?this.densityProg:this.pointProg;if(style==='density')g.bindFramebuffer(g.FRAMEBUFFER,this.densityFbo);else g.bindFramebuffer(g.FRAMEBUFFER,null);g.viewport(0,0,this.canvas.width,this.canvas.height);g.useProgram(p);this.setUniforms(p,f,z);g.bindVertexArray(this.vao);g.bindBuffer(g.ARRAY_BUFFER,this.idBuf);if(this.lastIdSource!==ids||this.lastIdLength!==ids.length){g.bufferData(g.ARRAY_BUFFER,ids,g.STREAM_DRAW);this.lastIdSource=ids;this.lastIdLength=ids.length;}g.enable(g.BLEND);if(style==='density'){g.blendFunc(g.ONE,g.ONE);g.uniform1f(g.getUniformLocation(p,'u_densityWeight'),this.floatDensity?1:1/255)}else g.blendFunc(g.SRC_ALPHA,g.ONE_MINUS_SRC_ALPHA);g.drawArrays(g.POINTS,0,ids.length);g.disable(g.BLEND);g.bindVertexArray(null);g.bindFramebuffer(g.FRAMEBUFFER,null);if(style==='density'&&!deferPresent)this.presentDensity();}
 drawPackedPoints(data,count,size,alpha){
   this.resize();const g=this.gl;g.bindFramebuffer(g.FRAMEBUFFER,null);g.viewport(0,0,this.canvas.width,this.canvas.height);
   g.useProgram(this.packedProg);g.uniform1f(this.packedSize,size);g.uniform1f(this.packedAlpha,alpha);
@@ -684,16 +684,53 @@ function colorVecFor(q,f,mode=Number($('colorMode').value),single=hexRgb($('poin
 function colorFor(q,f){const a=colorVecFor(q,f);return `rgb(${a.map(x=>Math.round(clamp(x,0,1)*255)).join(',')})`}
 let densityR=null,densityG=null,densityB=null,voronoiSites=[];
 function clearCPU(){resize2d(cpu);cpuCtx.clearRect(0,0,cpu.width,cpu.height);densityHist=null;densityR=densityG=densityB=null;voronoiSites=[]}
-function smartVoronoiColors(sites,w,h){const n=sites.length;if(!n)return [];const palette=[[0.12,0.47,0.71],[1.00,0.50,0.05],[0.17,0.63,0.17],[0.58,0.40,0.74],[0.55,0.34,0.29],[0.89,0.47,0.76],[0.50,0.50,0.50],[0.74,0.74,0.13],[0.09,0.75,0.81],[0.93,0.69,0.13]];const spacing=Math.sqrt(Math.max(1,w*h/n)),cell=Math.max(8,spacing*2.2),buckets=new Map(),key=(bx,by)=>`${bx},${by}`;for(let i=0;i<n;i++){const s=sites[i],bx=Math.floor(s.x/cell),by=Math.floor(s.y/cell),k=key(bx,by);let a=buckets.get(k);if(!a)buckets.set(k,a=[]);a.push(i)}const adj=Array.from({length:n},()=>[]);for(let i=0;i<n;i++){const s=sites[i],bx=Math.floor(s.x/cell),by=Math.floor(s.y/cell),cand=[];for(let yy=-2;yy<=2;yy++)for(let xx=-2;xx<=2;xx++){const a=buckets.get(key(bx+xx,by+yy));if(!a)continue;for(const j of a)if(j!==i){const q=sites[j],dx=s.x-q.x,dy=s.y-q.y;cand.push([dx*dx+dy*dy,j])}}cand.sort((a,b)=>a[0]-b[0]);const take=Math.min(10,cand.length);for(let k=0;k<take;k++){const j=cand[k][1];if(!adj[i].includes(j))adj[i].push(j);if(!adj[j].includes(i))adj[j].push(i)}}const order=Array.from({length:n},(_,i)=>i).sort((a,b)=>adj[b].length-adj[a].length||((sites[a].key>>>0)-(sites[b].key>>>0))),assigned=new Int16Array(n);assigned.fill(-1);for(const i of order){const used=new Set(adj[i].map(j=>assigned[j]).filter(x=>x>=0)),pref=splitmix32(sites[i].key>>>0)%palette.length;let pick=pref;for(let off=0;off<palette.length;off++){const c=(pref+off)%palette.length;if(!used.has(c)){pick=c;break}}assigned[i]=pick}return Array.from(assigned,i=>palette[i])}
-function voronoiColors(sites,w,h){const mode=$('voronoiCellColorMode').value;if(mode==='site')return sites.map(s=>s.baseColor);if(mode==='smart')return smartVoronoiColors(sites,w,h);if(mode==='hash')return sites.map(s=>hsv(splitmix32(s.key>>>0)/4294967296,.72,.98));if(mode==='angle')return sites.map(s=>hsv(s.v.arg()/(2*Math.PI)+.5,.82,.98));if(mode==='radius'){let mx=1e-12;for(const s of sites)mx=Math.max(mx,s.v.abs());return sites.map(s=>{const t=clamp(s.v.abs()/mx,0,1);return hsv(.68-.68*t,.8,.98)})}return sites.map(s=>s.baseColor)}
-function redrawVoronoiStyleOnly(){if($('renderStyle').value!=='voronoi'||!voronoiSites.length){redrawProcessed();return}resize2d(cpu);cpuCtx.clearRect(0,0,cpu.width,cpu.height);if($('voronoiShowPoints').checked){const dpr=window.devicePixelRatio||1,size=Number($('pointSize').value)*dpr;cpuCtx.globalAlpha=Number($('pointOpacity').value);for(const s of voronoiSites){cpuCtx.fillStyle=`rgb(${s.baseColor.map(x=>Math.round(clamp(x,0,1)*255)).join(',')})`;cpuCtx.beginPath();cpuCtx.arc(s.x,s.y,size/2,0,Math.PI*2);cpuCtx.fill()}cpuCtx.globalAlpha=1}if(glr?.voronoiAvailable)glr.drawVoronoi(voronoiSites,voronoiColors(voronoiSites,cpu.width,cpu.height));drawOverlays()}
-function cpuDraw(ids,f,z,clear=false){resize2d(cpu);if(clear)clearCPU();if($('renderStyle').value==='points'){drawFastPoints(ids,f,z);return;}const dpr=window.devicePixelRatio||1,w=cpu.width,h=cpu.height,style=$('renderStyle').value;if(style==='density'&&!densityHist){densityHist=new Uint32Array(w*h);densityR=new Float32Array(w*h);densityG=new Float32Array(w*h);densityB=new Float32Array(w*h)}const size=Number($('pointSize').value)*dpr,alpha=Number($('pointOpacity').value),drawCam={center:cams.out.center,zoom:cams.out.zoom*dpr},showVorPts=style==='voronoi'&&$('voronoiShowPoints').checked;cpuCtx.globalAlpha=alpha;for(const id of ids){const ev=evalDescriptor(id,f,z),col=colorVecFor(ev.q,f),css=`rgb(${col.map(x=>Math.round(x*255)).join(',')})`;let sub=0;for(const raw of ev.values||[]){const v=transformOutput(raw);if(!v||!Number.isFinite(v.re)||!Number.isFinite(v.im)){sub++;continue}const [x,y]=complexToScreen(v,drawCam,w,h,'out');if(x<0||x>=w||y<0||y>=h){sub++;continue}if(style==='density'){const ii=(y|0)*w+(x|0);densityHist[ii]++;densityR[ii]+=col[0];densityG[ii]+=col[1];densityB[ii]+=col[2]}else if(style==='voronoi'){const lo=Number(BigInt(id)&0xffffffffn)>>>0,key=(lo^Math.imul(sub+1,0x9e3779b1))>>>0;voronoiSites.push({x,y,v,baseColor:col,key});if(showVorPts){cpuCtx.fillStyle=css;cpuCtx.beginPath();cpuCtx.arc(x,y,size/2,0,Math.PI*2);cpuCtx.fill()}}else{cpuCtx.fillStyle=css;cpuCtx.beginPath();cpuCtx.arc(x,y,size/2,0,Math.PI*2);cpuCtx.fill()}sub++}}cpuCtx.globalAlpha=1;if(style==='density')presentCpuDensity();else if(style==='voronoi'){if(glr?.voronoiAvailable)glr.drawVoronoi(voronoiSites,voronoiColors(voronoiSites,w,h));else{if(!cpuDraw.vorWarned){toast('GPU Voronoi unavailable in this browser; showing sites only',3000);cpuDraw.vorWarned=true}}}}
+function* smartVoronoiColorSteps(sites,w,h){
+  const n=sites.length;if(!n)return [];
+  const palette=[[0.12,0.47,0.71],[1.00,0.50,0.05],[0.17,0.63,0.17],[0.58,0.40,0.74],[0.55,0.34,0.29],[0.89,0.47,0.76],[0.50,0.50,0.50],[0.74,0.74,0.13],[0.09,0.75,0.81],[0.93,0.69,0.13]];
+  const spacing=Math.sqrt(Math.max(1,w*h/n)),cell=Math.max(8,spacing*2.2),buckets=new Map(),key=(bx,by)=>`${bx},${by}`;
+  for(let i=0;i<n;i++){const s=sites[i],bx=Math.floor(s.x/cell),by=Math.floor(s.y/cell),k=key(bx,by);let a=buckets.get(k);if(!a)buckets.set(k,a=[]);a.push(i);yield}
+  const adj=Array.from({length:n},()=>[]);
+  for(let i=0;i<n;i++){
+    const s=sites[i],bx=Math.floor(s.x/cell),by=Math.floor(s.y/cell),cand=[];
+    for(let yy=-2;yy<=2;yy++)for(let xx=-2;xx<=2;xx++){
+      const a=buckets.get(key(bx+xx,by+yy));if(!a)continue;
+      for(const j of a)if(j!==i){const q=sites[j],dx=s.x-q.x,dy=s.y-q.y;cand.push([dx*dx+dy*dy,j]);yield}
+    }
+    cand.sort((a,b)=>a[0]-b[0]);const take=Math.min(10,cand.length);
+    for(let k=0;k<take;k++){const j=cand[k][1];if(!adj[i].includes(j))adj[i].push(j);if(!adj[j].includes(i))adj[j].push(i)}yield;
+  }
+  const order=Array.from({length:n},(_,i)=>i).sort((a,b)=>adj[b].length-adj[a].length||((sites[a].key>>>0)-(sites[b].key>>>0))),assigned=new Int16Array(n);assigned.fill(-1);
+  for(const i of order){const used=new Set(adj[i].map(j=>assigned[j]).filter(x=>x>=0)),pref=splitmix32(sites[i].key>>>0)%palette.length;let pick=pref;for(let off=0;off<palette.length;off++){const c=(pref+off)%palette.length;if(!used.has(c)){pick=c;break}}assigned[i]=pick;yield}
+  const colors=new Array(n);for(let i=0;i<n;i++){colors[i]=palette[assigned[i]];yield}return colors;
+}
+function* voronoiColorSteps(sites,w,h){
+  const mode=$('voronoiCellColorMode').value;
+  if(mode==='smart')return yield* smartVoronoiColorSteps(sites,w,h);
+  let mx=1e-12;if(mode==='radius')for(const s of sites){mx=Math.max(mx,s.v.abs());yield}
+  const colors=new Array(sites.length);
+  for(let i=0;i<sites.length;i++){
+    const s=sites[i];
+    colors[i]=mode==='hash'?hsv(splitmix32(s.key>>>0)/4294967296,.72,.98):mode==='angle'?hsv(s.v.arg()/(2*Math.PI)+.5,.82,.98):mode==='radius'?hsv(.68-.68*clamp(s.v.abs()/mx,0,1),.8,.98):s.baseColor;yield;
+  }
+  return colors;
+}
+function voronoiColors(sites,w,h){const steps=voronoiColorSteps(sites,w,h);let result;do{result=steps.next()}while(!result.done);return result.value}
+
+function redrawVoronoiStyleOnly(){if(currentFamily&&BigInt(processed)>targetCount(currentFamily)){requestRender(false);return}if($('renderStyle').value!=='voronoi'||!voronoiSites.length){redrawProcessed();return}resize2d(cpu);cpuCtx.clearRect(0,0,cpu.width,cpu.height);if($('voronoiShowPoints').checked){const dpr=window.devicePixelRatio||1,size=Number($('pointSize').value)*dpr;cpuCtx.globalAlpha=Number($('pointOpacity').value);for(const s of voronoiSites){cpuCtx.fillStyle=`rgb(${s.baseColor.map(x=>Math.round(clamp(x,0,1)*255)).join(',')})`;cpuCtx.beginPath();cpuCtx.arc(s.x,s.y,size/2,0,Math.PI*2);cpuCtx.fill()}cpuCtx.globalAlpha=1}if(glr?.voronoiAvailable)glr.drawVoronoi(voronoiSites,voronoiColors(voronoiSites,cpu.width,cpu.height));drawOverlays()}
+function cpuDraw(ids,f,z,clear=false,deferPresent=false){resize2d(cpu);if(clear)clearCPU();if($('renderStyle').value==='points'){drawFastPoints(ids,f,z);return;}const dpr=window.devicePixelRatio||1,w=cpu.width,h=cpu.height,style=$('renderStyle').value;if(style==='density'&&!densityHist){densityHist=new Uint32Array(w*h);densityR=new Float32Array(w*h);densityG=new Float32Array(w*h);densityB=new Float32Array(w*h)}const size=Number($('pointSize').value)*dpr,alpha=Number($('pointOpacity').value),drawCam={center:cams.out.center,zoom:cams.out.zoom*dpr},showVorPts=style==='voronoi'&&$('voronoiShowPoints').checked;cpuCtx.globalAlpha=alpha;for(const id of ids){const ev=evalDescriptor(id,f,z),col=colorVecFor(ev.q,f),css=`rgb(${col.map(x=>Math.round(x*255)).join(',')})`;let sub=0;for(const raw of ev.values||[]){const v=transformOutput(raw);if(!v||!Number.isFinite(v.re)||!Number.isFinite(v.im)){sub++;continue}const [x,y]=complexToScreen(v,drawCam,w,h,'out');if(x<0||x>=w||y<0||y>=h){sub++;continue}if(style==='density'){const ii=(y|0)*w+(x|0);densityHist[ii]++;densityR[ii]+=col[0];densityG[ii]+=col[1];densityB[ii]+=col[2]}else if(style==='voronoi'){const lo=Number(BigInt(id)&0xffffffffn)>>>0,key=(lo^Math.imul(sub+1,0x9e3779b1))>>>0;voronoiSites.push({x,y,v,baseColor:col,key});if(showVorPts){cpuCtx.fillStyle=css;cpuCtx.beginPath();cpuCtx.arc(x,y,size/2,0,Math.PI*2);cpuCtx.fill()}}else{cpuCtx.fillStyle=css;cpuCtx.beginPath();cpuCtx.arc(x,y,size/2,0,Math.PI*2);cpuCtx.fill()}sub++}}cpuCtx.globalAlpha=1;if(style==='density'&&!deferPresent)presentCpuDensity();else if(style==='voronoi'&&!deferPresent){if(glr?.voronoiAvailable)glr.drawVoronoi(voronoiSites,voronoiColors(voronoiSites,w,h));else{if(!cpuDraw.vorWarned){toast('GPU Voronoi unavailable in this browser; showing sites only',3000);cpuDraw.vorWarned=true}}}}
 function presentCpuDensity(){if(!densityHist)return;const w=cpu.width,h=cpu.height,img=cpuCtx.createImageData(w,h),tone=$('tone').value,exp=Number($('exposure').value);let max=1;for(let i=0;i<densityHist.length;i++)if(densityHist[i]>max)max=densityHist[i];for(let i=0;i<densityHist.length;i++){const n=densityHist[i];if(!n)continue;let x=n/max*exp;if(tone==='sqrt')x=Math.sqrt(x);else if(tone==='log')x=Math.log1p(x);x=1-Math.exp(-x);const j=i*4;img.data[j]=255*x*densityR[i]/n;img.data[j+1]=255*x*densityG[i]/n;img.data[j+2]=255*x*densityB[i]/n;img.data[j+3]=255*x}cpuCtx.putImageData(img,0,0)}
-function fitCloudPreview(f,seed){const count=Number(f.total<30000n?f.total:30000n);if(!count)return;const perm=makePermuter(f.total,seed),z=getZ(),xs=[],ys=[];const chunks=$('renderStyle').value==='points'&&currentFamily===f?renderedChunks:null;
+function fitCloudPreview(f,seed){const limit=targetCount(f),count=Number(limit<30000n?limit:30000n);if(!count)return;const perm=makePermuter(f.total,seed),z=getZ(),xs=[],ys=[];const chunks=$('renderStyle').value==='points'&&currentFamily===f?renderedChunks:null;
 function collect(raw){const v=transformOutput(raw);if(v&&Number.isFinite(v.re)&&Number.isFinite(v.im)){xs.push(v.re);ys.push(v.im)}}
 if(chunks){let remaining=count;for(const chunk of chunks){const take=Math.min(remaining,chunk.length);if(!take)break;const p=fastPointPlan(chunk,f);if(p.kind!=='general'){evaluatePointPlan(p,f,z);for(let j=0;j<take;j++)collect(new C(p.values[2*j],p.values[2*j+1]))}else for(let j=0;j<take;j++)for(const raw of evalDescriptor(chunk[j],f,z).values)collect(raw);remaining-=take}}
 else for(let j=0;j<count;j++){const id=f.total<=4294967295n?perm.at(j):perm.at(BigInt(j));for(const raw of evalDescriptor(id,f,z).values||[])collect(raw)}
-if(xs.length<2)return;xs.sort((a,b)=>a-b);ys.sort((a,b)=>a-b);const lo=Math.floor(xs.length*.01),hi=Math.max(lo,Math.ceil(xs.length*.99)-1),minx=xs[lo],maxx=xs[hi],miny=ys[lo],maxy=ys[hi];cams.out.center=new C((minx+maxx)/2,(miny+maxy)/2);const w=$('outputPane').clientWidth,h=$('outputPane').clientHeight,span=Math.max(maxx-minx,maxy-miny,1e-6);cams.out.zoom=.82*Math.min(w,h)/span;redrawProcessed()}
+if(fitCloudBounds(xs,ys))redrawProcessed()}
+function fitCloudBounds(xs,ys){
+  if(xs.length<2)return false;xs.sort((a,b)=>a-b);ys.sort((a,b)=>a-b);
+  const lo=Math.floor(xs.length*.01),hi=Math.max(lo,Math.ceil(xs.length*.99)-1),minx=xs[lo],maxx=xs[hi],miny=ys[lo],maxy=ys[hi];
+  cams.out.center=new C((minx+maxx)/2,(miny+maxy)/2);
+  const w=$('outputPane').clientWidth,h=$('outputPane').clientHeight,span=Math.max(maxx-minx,maxy-miny,1e-6);
+  cams.out.zoom=.82*Math.min(w,h)/span;return true;
+}
 
 
 // ---------- Overlay drawing ----------
@@ -709,17 +746,134 @@ function getZ(){return new C(Number($('zRe').value)||0,Number($('zIm').value)||0
 function setZ(z,trigger=true){$('zRe').value=Number(z.re.toFixed(12));$('zIm').value=Number(z.im.toFixed(12));drawOverlays();if(trigger&&$('animMode').value==='static')requestRender(false)}
 function pointBackendLabel(){return $('renderStyle').value==='points'&&glr&&!glr.gl.isContextLost()&&Number($('pointSize').value)*(window.devicePixelRatio||1)<=glr.maxPointSize?'f64 + GPU points':'CPU f64'}
 function chooseBackend(f){if($('renderStyle').value==='voronoi')return 'cpu';const want=$('precision').value;if(want==='gpu'&&f.gpuCompatible&&Number($('colorMode').value)<=15&&glr&&glr.canGPU(f))return 'gpu';return 'cpu'}
-function clearAll(){renderToken++;processed=0;totalTarget=0;renderedChunks=[];currentFamily=null;paused=false;if(glr)glr.clear();clearCPU();updateHUD('Cleared');drawOverlays()}
+function clearAll(){renderToken++;processed=0;totalTarget=0;renderedChunks=[];currentFamily=null;paused=false;$('pauseBtn').textContent='Pause';if(glr)glr.clear();clearCPU();updateHUD('Cleared');drawOverlays()}
 function targetCount(f){const v=$('renderAmount').value;if(v==='all')return f.total;let n=v==='custom'?BigInt(Math.max(1,Number($('customAmount').value)||1)):BigInt(v);return n<f.total?n:f.total}
 function warningNeeded(evalCount){return evalCount>5000000n}
-function openWarning(html,onProceed,onPreview=null){const d=$('warningDialog');$('warningText').innerHTML=html;if(!d.open)d.showModal();$('warningProceed').onclick=()=>{d.close();onProceed()};$('warningCancel').onclick=()=>d.close();$('warningPreview').onclick=()=>{d.close();if(onPreview)onPreview();else{$('renderAmount').value='100000';onProceed()}}}
+function openWarning(html,onProceed,onPreview=null){const d=$('warningDialog');$('warningText').innerHTML=html;if(!d.open)d.showModal();$('warningProceed').onclick=()=>{d.close();onProceed()};$('warningCancel').onclick=()=>d.close();$('warningPreview').onclick=()=>{d.close();if(onPreview)onPreview()}}
 function maybeWarn(evalCount,onProceed,onPreview=null){if(!warningNeeded(evalCount)){onProceed();return}openWarning(`<p>This operation may be slow.</p><p><b>${fmtInt(evalCount)}</b> family-member evaluations are requested for this render.</p><p>The app will remain cancellable. GPU f32 is recommended for interactive exploration; fixed-subset or preview modes are recommended for animation.</p>`,onProceed,onPreview)}
 function maybeWarnAnimation(perFrame,frames,onProceed,onPreview=null){const total=perFrame*frames;if(perFrame<=5000000n&&total<=100000000n){onProceed();return}openWarning(`<p>Complete Each Frame will process <b>${fmtInt(perFrame)}</b> family members per frame.</p><p>With <b>${fmtInt(frames)}</b> path samples, one full traversal is up to <b>${fmtInt(total)}</b> family-member evaluations.</p><p>The second number is the total across the animation, not the family size of a single frame.</p><p>Fixed Sample Subset or Realtime Preview is recommended if you want smooth playback.</p>`,onProceed,onPreview)}
-function requestRender(warn=true,onComplete=null){let f;try{f=makeFamily()}catch(e){toast(e.message,3000);return}$('familyCount').textContent=fmtInt(f.total);$('familyStatus').textContent=`${generatorLabel(f.generator)} · ${evaluationLabel(f.evaluation)}${f.gpuCompatible?' · GPU-compatible':' · f64 evaluator / batched Points'}`;const n=targetCount(f);const sampled=n<f.total;const evals=n;if(warn)return maybeWarn(evals,()=>startRender(f,n,sampled,onComplete));startRender(f,n,sampled,onComplete)}
-function startRender(f,nBig,sampled,onComplete=null,idsOverride=null){renderToken++;const token=renderToken;currentFamily=f;processed=0;startTime=now();lastRateTime=startTime;lastRateCount=0;renderedChunks=[];currentSampled=sampled;paused=false;$('rateLine').textContent='—';$('progressBar').style.width='0%';activeBackend=chooseBackend(f);$('backendPill').textContent=$('renderStyle').value==='voronoi'?'Backend: CPU f64 sites + GPU Voronoi':`Backend: ${activeBackend==='gpu'?'GPU f32 shader':pointBackendLabel()}`;if($('renderStyle').value!=='voronoi'&&$('precision').value==='gpu'&&activeBackend==='cpu'&&f.gpuCompatible)toast('GPU limits exceeded; using CPU f64 fallback',2500);if(glr)glr.clear();clearCPU();totalTarget=Number(nBig<=BigInt(Number.MAX_SAFE_INTEGER)?nBig:BigInt(Number.MAX_SAFE_INTEGER));const seed=Number($('seed').value)>>>0;currentPerm=idsOverride?null:makePermuter(f.total,seed);if($('autoFit').checked&&!$('lockCamera').checked)setTimeout(()=>fitCloudPreview(f,seed),0);updateHUD(sampled?'Sampled render':'Rendering');const nTarget=nBig;let i=0n;const CHUNK=$('renderStyle').value==='voronoi'?(nTarget<=100000n?Number(nTarget):20000):(activeBackend==='gpu'?65536:6000);
-  function step(){if(token!==renderToken)return;if(paused){requestAnimationFrame(step);return}const remaining=nTarget-i;if(remaining<=0n){updateHUD(sampled?'Sample complete':'Complete');if(onComplete)onComplete();return}const c=Number(remaining>BigInt(CHUNK)?BigInt(CHUNK):remaining);let ids;if(idsOverride){const start=Number(i),slice=idsOverride.slice(start,start+c);ids=activeBackend==='gpu'?(slice instanceof Uint32Array?slice:Uint32Array.from(slice,Number)):slice}else if(activeBackend==='gpu'){ids=new Uint32Array(c);for(let j=0;j<c;j++)ids[j]=currentPerm.at(Number(i)+j)}else{ids=new Array(c);if(currentPerm instanceof Permuter32){const base=Number(i);for(let j=0;j<c;j++)ids[j]=currentPerm.at(base+j)}else{for(let j=0;j<c;j++)ids[j]=currentPerm.at(i+BigInt(j))}}
-    renderedChunks.push(ids);if(activeBackend==='gpu')glr.draw(ids,f,getZ(),false);else cpuDraw(ids,f,getZ(),false);i+=BigInt(c);processed+=c;updateHUD(sampled?'Sampling':'Rendering');if(activeBackend==='cpu')setTimeout(step,0);else requestAnimationFrame(step)}step()}
-function redrawProcessed(){if(!currentFamily)return;if(glr)glr.clear();clearCPU();for(const ch of renderedChunks){if(activeBackend==='gpu')glr.draw(ch,currentFamily,getZ(),false);else cpuDraw(ch,currentFamily,getZ(),false)}drawOverlays()}
+// Cooperative tasks yield to input without waiting for a display refresh per batch.
+const renderTaskChannel=new MessageChannel(),renderTasks=[];
+renderTaskChannel.port1.onmessage=()=>{const task=renderTasks.shift();if(task)task()};
+function queueRenderTask(task){renderTasks.push(task);renderTaskChannel.port2.postMessage(0)}
+function requestRender(warn=true,onComplete=null,bypassLimit=false){
+  let f;try{f=makeFamily()}catch(e){toast(e.message,3000);return}
+  $('familyCount').textContent=fmtInt(f.total);$('familyStatus').textContent=`${generatorLabel(f.generator)} · ${evaluationLabel(f.evaluation)}${f.gpuCompatible?' · GPU-compatible':' · f64 evaluator / batched Points'}`;
+  const n=bypassLimit?f.total:targetCount(f);
+  function render(){
+    if(!bypassLimit&&$('renderStyle').value==='points'){
+      const seed=Number($('seed').value)>>>0;
+      if(!f.normalSelection||f.normalSelection.n!==n||f.normalSelection.seed!==seed)f.normalSelection={n,seed,ids:sampledIds(f,n)};
+      renderDirectFrame(f.normalSelection.ids,f,getZ(),n<f.total?'Sample complete':'Complete');
+      if($('autoFit').checked&&!$('lockCamera').checked)fitCloudPreview(f,seed);
+      if(onComplete)onComplete();
+    }else startRender(f,n,n<f.total,onComplete,null,bypassLimit);
+  }
+  if(warn)maybeWarn(n,render,()=>{const preview=n<100000n?n:100000n;startRender(f,preview,preview<f.total,onComplete)});else render();
+}
+function renderAll(){
+  renderToken++;animPlaying=false;clearInterval(animTimer);clearTimeout(completeAdvanceTimer);$('playBtn').textContent='Play';
+  clearTimeout(hoverSettleTimer);if(hoverPreviewRaf){cancelAnimationFrame(hoverPreviewRaf);hoverPreviewRaf=0}
+  paused=false;$('pauseBtn').textContent='Pause';requestRender(false,null,true);
+}
+function startRender(f,nBig,sampled,onComplete=null,idsOverride=null,bypassLimit=false){
+  if(!bypassLimit&&nBig>targetCount(f))nBig=targetCount(f);
+  sampled=nBig<f.total;
+  const token=++renderToken,z=getZ(),backend=chooseBackend(f),style=$('renderStyle').value;
+  currentFamily=f;processed=0;startTime=lastRateTime=now();lastRateCount=0;renderedChunks=[];currentSampled=sampled;paused=false;$('pauseBtn').textContent='Pause';
+  $('rateLine').textContent='—';activeBackend=backend;
+  $('backendPill').textContent=style==='voronoi'?'Backend: CPU f64 sites + GPU Voronoi':`Backend: ${backend==='gpu'?'GPU f32 shader':pointBackendLabel()}`;
+  if(glr)glr.clear();clearCPU();totalTarget=Number(nBig<=BigInt(Number.MAX_SAFE_INTEGER)?nBig:BigInt(Number.MAX_SAFE_INTEGER));
+  const seed=Number($('seed').value)>>>0;currentPerm=idsOverride?null:makePermuter(f.total,seed);
+  // Retain selections and plans for subsequent renders of the same family and seed.
+  const previous=f.progressiveSelection?.seed===seed?f.progressiveSelection.chunks:null,cache=new Map(),perm=currentPerm;
+  f.progressiveSelection={seed,chunks:cache};
+  let offset=0n,batchSize=32,cpuWork=0,fence=null,turnStarted=0,finalized=style!=='voronoi';
+  let fitting=$('autoFit').checked&&!$('lockCamera').checked;
+  const fitTarget=nBig<30000n?nBig:30000n,fitX=[],fitY=[];
+  function collectFit(raw){const v=transformOutput(raw);if(v&&Number.isFinite(v.re)&&Number.isFinite(v.im)){fitX.push(v.re);fitY.push(v.im)}}
+  const gl=glr&&!glr.gl.isContextLost()?glr.gl:null;
+  function releaseFence(){if(fence){gl.deleteSync(fence);fence=null}}
+  function valid(){if(token===renderToken)return true;releaseFence();return false}
+  function done(){
+    updateHUD(sampled?'Sample complete':'Complete');
+    $('rateLine').textContent=`${cpuWork.toFixed(1)} ms main-thread render work · ${(now()-startTime).toFixed(1)} ms elapsed · ${fmtInt(processed)} members`;
+    if(onComplete)onComplete();
+  }
+  function continueAfterGPU(){
+    if(!valid())return;
+    if(fence){
+      const result=gl.clientWaitSync(fence,0,0);
+      if(result===gl.TIMEOUT_EXPIRED){setTimeout(continueAfterGPU,1);return}
+      releaseFence();
+      // Include GPU backpressure when selecting the next batch size.
+      const elapsed=now()-turnStarted;if(elapsed>12)batchSize=Math.max(1,Math.floor(batchSize*8/elapsed));
+    }
+    if(offset>=nBig){if(finalized)done();else queueRenderTask(finishVoronoi)}else queueRenderTask(step);
+  }
+  let colorSteps=null;
+  function finishVoronoi(){
+    if(!valid())return;if(paused){setTimeout(finishVoronoi,30);return}
+    turnStarted=now();
+    try{
+      if(glr?.voronoiAvailable){
+        if(!colorSteps)colorSteps=voronoiColorSteps(voronoiSites,cpu.width,cpu.height);
+        let result;
+        do{result=colorSteps.next()}while(!result.done&&now()-turnStarted<8);
+        if(!result.done){cpuWork+=now()-turnStarted;updateHUD('Coloring Voronoi');queueRenderTask(finishVoronoi);return}
+        glr.drawVoronoi(voronoiSites,result.value);
+      }
+      finalized=true;cpuWork+=now()-turnStarted;
+      if(gl){fence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);gl.flush()}
+      continueAfterGPU();
+    }catch(e){releaseFence();renderToken++;toast(e.message,4000);updateHUD('Render failed')}
+  }
+  function step(){
+    if(!valid())return;
+    if(paused){setTimeout(step,30);return}
+    turnStarted=now();
+    try{
+      do{
+        const batchStarted=now(),remaining=(fitting?fitTarget:nBig)-offset;
+        if(remaining<=0n)break;
+        let ids=idsOverride?null:(cache.get(offset)||previous?.get(offset));
+        if(ids&&(BigInt(ids.length)>remaining||ids.length>batchSize))ids=ids.slice(0,Number(remaining<BigInt(batchSize)?remaining:BigInt(batchSize)));
+        if(!ids){
+          const count=Number(remaining<BigInt(batchSize)?remaining:BigInt(batchSize));
+          if(idsOverride)ids=idsOverride.slice(Number(offset),Number(offset)+count);
+          else{
+            ids=f.total<=4294967295n?new Uint32Array(count):new Array(count);
+            for(let j=0;j<count;j++)ids[j]=perm instanceof Permuter32?perm.at(Number(offset)+j):perm.at(offset+BigInt(j));
+          }
+        }
+        if(!idsOverride)cache.set(offset,ids);
+        if(fitting){
+          if(style==='points'&&backend==='cpu'){
+            const plan=fastPointPlan(ids,f);
+            if(plan.kind!=='general'){evaluatePointPlan(plan,f,z);for(let j=0;j<ids.length;j++)collectFit(new C(plan.values[2*j],plan.values[2*j+1]))}
+            else for(const id of ids)for(const raw of evalDescriptor(id,f,z).values)collectFit(raw);
+          }else for(const id of ids)for(const raw of evalDescriptor(id,f,z).values)collectFit(raw);
+        }else{
+          renderedChunks.push(ids);
+          if(backend==='gpu')glr.draw(ids,f,z,false,true);else cpuDraw(ids,f,z,false,true);
+          processed+=ids.length;
+        }
+        offset+=BigInt(ids.length);
+        if(fitting&&offset>=fitTarget){fitCloudBounds(fitX,fitY);fitting=false;offset=0n;drawOverlays()}
+        const work=now()-batchStarted,cost=Math.max(.05,work);cpuWork+=work;
+        // Aim for 3 ms of work per batch; growth is conservative on cold plans.
+        batchSize=Math.max(1,Math.floor(ids.length*clamp(3/cost,.125,2)));
+      }while(offset<nBig&&now()-turnStarted<8);
+      if(!fitting&&style==='density'){const t=now();if(backend==='gpu')glr.presentDensity();else presentCpuDensity();cpuWork+=now()-t}
+      updateHUD(fitting?'Fitting cloud':sampled?'Sampling':'Rendering');
+      if(gl){fence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);gl.flush()}
+      continueAfterGPU();
+    }catch(e){releaseFence();renderToken++;toast(e.message,4000);updateHUD('Render failed')}
+  }
+  updateHUD(fitting?'Fitting cloud':sampled?'Sampled render':'Rendering');queueRenderTask(step);
+}
+
+function redrawProcessed(){if(!currentFamily)return;if(BigInt(processed)>targetCount(currentFamily)){requestRender(false);return}if(glr)glr.clear();clearCPU();for(const ch of renderedChunks){if(activeBackend==='gpu')glr.draw(ch,currentFamily,getZ(),false);else cpuDraw(ch,currentFamily,getZ(),false)}drawOverlays()}
 function updateHUD(status){let frameInfo='';if($('animMode').value==='path'){const N=Math.max(1,parseInt($('pathN').value)||1);frameInfo=` · frame ${animFrame+1}/${N}`}else if($('animMode').value==='degree')frameInfo=` · degree ${animFrame}`;$('statusLine').textContent=status+frameInfo;const tot=typeof totalTarget==='number'?totalTarget:0;$('countLine').textContent=`${currentSampled?'Sampled ':'Processed '}${fmtInt(processed)} / ${fmtInt(tot)}`;const p=tot?processed/tot:0;$('progressBar').style.width=`${clamp(p*100,0,100)}%`;const t=now(),dt=(t-lastRateTime)/1000;if(dt>.4){const rate=(processed-lastRateCount)/dt;lastRateCount=processed;lastRateTime=t;const elapsed=(t-startTime)/1000,eta=rate>0?(tot-processed)/rate:Infinity;$('rateLine').textContent=`${rate.toLocaleString(undefined,{maximumFractionDigits:0})} values/s · ${elapsed.toFixed(1)} s${Number.isFinite(eta)&&processed<tot?` · ETA ${eta.toFixed(1)} s`:''}`}}
 // ---------- Animation ----------
 let animPlaying=false,animFrame=0,animTimer=null,fixedIds=null,previewIds=null,completeIds=null,pathFn=null,animationUiPaused=false,completeAdvanceTimer=null;
@@ -795,12 +949,12 @@ function applyMatrixPreset(name){if(!name)return;const p=MATRIX_PRESETS[name];if
 function applyPathPreset(name){const p=PATH_PRESETS[name];if(!p)return;$('pathExpr').value=p.expr;$('tStart').value=p.start;$('tEnd').value=p.end;$('pathN').value=p.N;$('endpoint').checked=false;$('loopPath').checked=p.loop;animFrame=0;trail=[];fixedIds=previewIds=completeIds=null;rebuildPath();if($('animMode').value==='path')renderAnimationFrame()}
 function rebuildPath(){pathPoints=[];try{pathFn=compileExpr($('pathExpr').value);$('pathError').textContent='';const N=Math.max(1,parseInt($('pathN').value)||1),a=Number($('tStart').value),b=Number($('tEnd').value),incl=$('endpoint').checked;const denom=incl?Math.max(1,N-1):N;const drawN=Math.min(N,3000);for(let j=0;j<drawN;j++){const k=Math.min(N-1,Math.floor(j*N/drawN)),t=N===1?a:a+(b-a)*k/denom;pathPoints.push(pathFn({t,k,N}))}drawOverlays();return true}catch(e){pathFn=null;$('pathError').textContent=e.message;return false}}
 function pathZFor(k){if(!pathFn&&!rebuildPath())return getZ();const N=Math.max(1,parseInt($('pathN').value)||1),a=Number($('tStart').value),b=Number($('tEnd').value),den=$('endpoint').checked?Math.max(1,N-1):N,t=N===1?a:a+(b-a)*k/den;return pathFn({t,k,N})}
-function sampledIds(f,wantValue){const want=BigInt(Math.max(1,Math.floor(Number(wantValue)||1))),n=want<f.total?want:f.total,seed=Number($('seed').value)>>>0,perm=makePermuter(f.total,seed),len=Number(n>BigInt(Number.MAX_SAFE_INTEGER)?BigInt(Number.MAX_SAFE_INTEGER):n);if(n>1000000n&&f.total>4294967295n)toast('Very large sampled subsets with huge families may use substantial memory');if(f.total<=4294967295n){const a=new Uint32Array(len);for(let i=0;i<len;i++)a[i]=perm.at(i);return a}const a=new Array(len);for(let i=0;i<len;i++)a[i]=perm.at(BigInt(i));return a}
-function sequentialIds(f){const len=Number(f.total);if(f.total<=4294967295n){const a=new Uint32Array(len);for(let i=0;i<len;i++)a[i]=i;return a}const a=new Array(len);for(let i=0;i<len;i++)a[i]=BigInt(i);return a}
-function renderDirectFrame(ids,f,z,status){const frameStart=now();renderToken++;const backend=chooseBackend(f);activeBackend=backend;currentFamily=f;currentPerm=null;paused=false;renderedChunks=[ids];processed=ids.length;totalTarget=ids.length;currentSampled=BigInt(ids.length)<f.total;startTime=now();lastRateTime=startTime;lastRateCount=0;$('backendPill').textContent=$('renderStyle').value==='voronoi'?'Backend: CPU f64 sites + GPU Voronoi':`Backend: ${backend==='gpu'?'GPU f32 shader':pointBackendLabel()}`;if(glr)glr.clear();clearCPU();if(backend==='gpu'&&ids instanceof Uint32Array)glr.draw(ids,f,z,false);else cpuDraw(ids,f,z,false);updateHUD(status);$('rateLine').textContent=`${(now()-frameStart).toFixed(1)} ms main-thread frame work · ${ids.length.toLocaleString()} members`}
+function sampledIds(f,wantValue){const want=BigInt(Math.max(1,Math.floor(Number(wantValue)||1))),limit=targetCount(f),n=want<limit?want:limit,seed=Number($('seed').value)>>>0,perm=makePermuter(f.total,seed),len=Number(n>BigInt(Number.MAX_SAFE_INTEGER)?BigInt(Number.MAX_SAFE_INTEGER):n);if(n>1000000n&&f.total>4294967295n)toast('Very large sampled subsets with huge families may use substantial memory');if(f.total<=4294967295n){const a=new Uint32Array(len);for(let i=0;i<len;i++)a[i]=perm.at(i);return a}const a=new Array(len);for(let i=0;i<len;i++)a[i]=perm.at(BigInt(i));return a}
+function sequentialIds(f){if(targetCount(f)<f.total)return sampledIds(f,targetCount(f));const len=Number(f.total);if(f.total<=4294967295n){const a=new Uint32Array(len);for(let i=0;i<len;i++)a[i]=i;return a}const a=new Array(len);for(let i=0;i<len;i++)a[i]=BigInt(i);return a}
+function renderDirectFrame(ids,f,z,status){const frameStart=now();renderToken++;const backend=chooseBackend(f);activeBackend=backend;currentFamily=f;currentPerm=null;paused=false;$('pauseBtn').textContent='Pause';renderedChunks=[ids];processed=ids.length;totalTarget=ids.length;currentSampled=BigInt(ids.length)<f.total;startTime=now();lastRateTime=startTime;lastRateCount=0;$('backendPill').textContent=$('renderStyle').value==='voronoi'?'Backend: CPU f64 sites + GPU Voronoi':`Backend: ${backend==='gpu'?'GPU f32 shader':pointBackendLabel()}`;if(glr)glr.clear();clearCPU();if(backend==='gpu'&&ids instanceof Uint32Array)glr.draw(ids,f,z,false);else cpuDraw(ids,f,z,false);updateHUD(status);$('rateLine').textContent=`${(now()-frameStart).toFixed(1)} ms main-thread frame work · ${ids.length.toLocaleString()} members`}
 function scheduleCompleteAdvance(frameStarted){clearTimeout(completeAdvanceTimer);if(!animPlaying||animationUiPaused)return;const fps=Math.max(1,Number($('pathFps').value)||30),delay=Math.max(0,1000/fps-(now()-frameStarted));completeAdvanceTimer=setTimeout(()=>{if(animPlaying&&!animationUiPaused&&$('animMode').value==='path'&&$('pathRenderMode').value==='complete')advanceFrame(1)},delay)}
 
-function renderAnimationFrame(){clearTimeout(completeAdvanceTimer);const mode=$('animMode').value;if(mode==='path'){if(!pathFn&&!rebuildPath())return;const N=Math.max(1,parseInt($('pathN').value)||1);animFrame=clamp(animFrame,0,N-1);const z=pathZFor(animFrame);$('zRe').value=z.re;$('zIm').value=z.im;const last=trail.at(-1);if(!last||Math.hypot(last.re-z.re,last.im-z.im)>1e-12)trail.push(z);const tl=Math.max(1,parseInt($('trailLength').value)||40);if(trail.length>tl)trail.splice(0,trail.length-tl);drawOverlays();let f;try{f=makeFamily()}catch(e){toast(e.message);return}const rm=$('pathRenderMode').value,backend=chooseBackend(f),frameStarted=now();if(rm==='fixed'){if(!fixedIds)fixedIds=sampledIds(f,$('fixedSubset').value);renderDirectFrame(fixedIds,f,z,'Fixed subset frame')}else if(rm==='preview'){if(!previewIds)previewIds=sampledIds(f,$('previewBudget').value);renderDirectFrame(previewIds,f,z,'Realtime preview')}else if($('renderStyle').value==='points'){if(!completeIds)completeIds=sequentialIds(f);renderDirectFrame(completeIds,f,z,'Complete frame')}else{const DIRECT_CPU_LIMIT=100000n;if(backend==='gpu'||f.total<=DIRECT_CPU_LIMIT){if(!completeIds)completeIds=sequentialIds(f);renderDirectFrame(completeIds,f,z,'Complete frame');scheduleCompleteAdvance(frameStarted)}else{const old=$('renderAmount').value;$('renderAmount').value='all';requestRender(false,()=>scheduleCompleteAdvance(frameStarted));$('renderAmount').value=old;return}}}else if(mode==='degree'){const max=Math.max(0,parseInt($('sweepMax').value)||0);animFrame=clamp(animFrame,0,max);$('degree').value=animFrame;if($('sweepType').value==='current'){$('exactBtn').classList.add('active');$('upToBtn').classList.remove('active')}else{$('upToBtn').classList.add('active');$('exactBtn').classList.remove('active')}countForUI();requestRender(false)}}
+function renderAnimationFrame(){clearTimeout(completeAdvanceTimer);const mode=$('animMode').value;if(mode==='path'){if(!pathFn&&!rebuildPath())return;const N=Math.max(1,parseInt($('pathN').value)||1);animFrame=clamp(animFrame,0,N-1);const z=pathZFor(animFrame);$('zRe').value=z.re;$('zIm').value=z.im;const last=trail.at(-1);if(!last||Math.hypot(last.re-z.re,last.im-z.im)>1e-12)trail.push(z);const tl=Math.max(1,parseInt($('trailLength').value)||40);if(trail.length>tl)trail.splice(0,trail.length-tl);drawOverlays();let f;try{f=makeFamily()}catch(e){toast(e.message);return}const rm=$('pathRenderMode').value,backend=chooseBackend(f),frameStarted=now();if(rm==='fixed'){if(!fixedIds)fixedIds=sampledIds(f,$('fixedSubset').value);renderDirectFrame(fixedIds,f,z,'Fixed subset frame')}else if(rm==='preview'){if(!previewIds)previewIds=sampledIds(f,$('previewBudget').value);renderDirectFrame(previewIds,f,z,'Realtime preview')}else if($('renderStyle').value==='points'){if(!completeIds)completeIds=sequentialIds(f);renderDirectFrame(completeIds,f,z,'Complete frame')}else{const DIRECT_CPU_LIMIT=100000n;if(backend==='gpu'||f.total<=DIRECT_CPU_LIMIT){if(!completeIds)completeIds=sequentialIds(f);renderDirectFrame(completeIds,f,z,'Complete frame');scheduleCompleteAdvance(frameStarted)}else{requestRender(false,()=>scheduleCompleteAdvance(frameStarted));return}}}else if(mode==='degree'){const max=Math.max(0,parseInt($('sweepMax').value)||0);animFrame=clamp(animFrame,0,max);$('degree').value=animFrame;if($('sweepType').value==='current'){$('exactBtn').classList.add('active');$('upToBtn').classList.remove('active')}else{$('upToBtn').classList.add('active');$('exactBtn').classList.remove('active')}countForUI();requestRender(false)}}
 function advanceFrame(d){const mode=$('animMode').value;if(mode==='path'){const N=Math.max(1,parseInt($('pathN').value)||1);let n=animFrame+d,wrapped=false;if(n>=N){n=$('loopPath').checked?0:N-1;wrapped=$('loopPath').checked}if(n<0){n=$('loopPath').checked?N-1:0;wrapped=$('loopPath').checked}if(wrapped)trail=[];animFrame=n}else if(mode==='degree'){const N=Math.max(0,parseInt($('sweepMax').value)||0)+1;let n=animFrame+d;if(n>=N)n=$('loopSweep').checked?0:N-1;if(n<0)n=$('loopSweep').checked?N-1:0;animFrame=n}renderAnimationFrame()}
 function playAnimation(){animPlaying=!animPlaying;$('playBtn').textContent=animPlaying?'Pause':'Play';clearInterval(animTimer);clearTimeout(completeAdvanceTimer);if(!animPlaying)return;const fps=$('animMode').value==='degree'?Number($('sweepFps').value):Number($('pathFps').value);animTimer=setInterval(()=>{if(animationUiPaused)return;if($('pathRenderMode').value==='complete'&&$('animMode').value==='path'&&$('renderStyle').value!=='points')return;advanceFrame(1)},1000/Math.max(1,fps));renderAnimationFrame()}
 
@@ -879,15 +1033,16 @@ $('alphabetPreset').onchange=()=>{let v=$('alphabetPreset').value;if(v.startsWit
 $('evaluationType').addEventListener('change',()=>{reconcileGeneratorForEvaluation();updateFamilyUI();refreshAfterMathChange(false)});
 $('generatorType').addEventListener('change',()=>{reconcileEvaluationForGenerator();updateFamilyUI();refreshAfterMathChange(false)});
 ['transitionMode','transitionMatrix','sparseMode','sparseCount','sparseGap','integerSign','integerBound','sumMode','sumA','sumB','l1Mode','l1A','l1B','weightedMode','weightedA','weightedB','permValues','partitionN','partitionMaxPart','partitionMaxParts','matrixPreset','matrixAlphabet','basisType','basisExpr','factorPreset','factorExpr','recurrenceVariant','initialWExpr','quadraticVariant','recurrenceExpr','matrixObservation'].forEach(id=>$(id).addEventListener('change',()=>{updateFamilyUI();refreshAfterMathChange(false)}));
-$('renderBtn').onclick=()=>requestRender(true);$('pauseBtn').onclick=()=>{paused=!paused;$('pauseBtn').textContent=paused?'Resume':'Pause'};$('clearBtn').onclick=clearAll;$('newSeed').onclick=()=>{$('seed').value=Math.floor(Math.random()*2**32);refreshAfterMathChange(false)};
-$('renderAmount').onchange=()=>{$('customAmountRow').style.display=$('renderAmount').value==='custom'?'flex':'none'};
+$('renderBtn').onclick=renderAll;$('pauseBtn').onclick=()=>{paused=!paused;$('pauseBtn').textContent=paused?'Resume':'Pause'};$('clearBtn').onclick=clearAll;$('newSeed').onclick=()=>{$('seed').value=Math.floor(Math.random()*2**32);refreshAfterMathChange(false)};
+function masterLimitChanged(){$('customAmountRow').style.display=$('renderAmount').value==='custom'?'flex':'none';refreshAfterMathChange(false)}
+$('renderAmount').onchange=masterLimitChanged;$('customAmount').onchange=masterLimitChanged;
 ['pointSize','pointOpacity','pointColor','exposure','bgColor'].forEach(id=>$(id).addEventListener('input',redrawProcessed));$('colorMode').addEventListener('change',()=>{if(currentFamily&&chooseBackend(currentFamily)!==activeBackend)requestRender(false);else redrawProcessed()});$('renderStyle').addEventListener('change',()=>{updateFamilyUI(false);requestRender(false)});$('tone').addEventListener('change',redrawProcessed);['voronoiShowPoints','voronoiFillCells','voronoiShowWalls','voronoiCellOpacity','voronoiCellColorMode','voronoiWallMode','voronoiWallColor','voronoiWallColor2','voronoiWallThickness','voronoiWallOpacity'].forEach(id=>$(id).addEventListener('input',redrawVoronoiStyleOnly));
 $('layout').onchange=updateLayout;$('fitBtn').onclick=$('quickFit').onclick=()=>{if(currentFamily)fitCloudPreview(currentFamily,Number($('seed').value)>>>0)};$('resetView').onclick=()=>{cams.out={center:new C(0,0),zoom:230};cams.in={center:new C(0,0),zoom:230};redrawProcessed()};
 for(const [r,i] of [[$('outRealDir'),$('outImagDir')],[$('inRealDir'),$('inImagDir')]]){r.onchange=()=>{updateImagSelect(r,i);redrawProcessed()};i.onchange=redrawProcessed;updateImagSelect(r,i)}$('outRealDir').value='up';updateImagSelect($('outRealDir'),$('outImagDir'));$('outImagDir').value='right';$('inRealDir').value='up';updateImagSelect($('inRealDir'),$('inImagDir'));$('inImagDir').value='right';$('showAxes').onchange=drawOverlays;$('showUnitCircle').onchange=drawOverlays;
 ['inputSize','inputColor','inputOutline','crosshair','showInput','showTrail','trailLength','trailOpacity','showPath'].forEach(id=>$(id).addEventListener('input',drawOverlays));
 ['zRe','zIm'].forEach(id=>$(id).addEventListener('change',()=>{drawOverlays();if($('animMode').value==='static')requestRender(true)}));
 $('animMode').onchange=()=>{$('pathControls').style.display=$('animMode').value==='path'?'block':'none';$('degreeControls').style.display=$('animMode').value==='degree'?'block':'none';animPlaying=false;$('playBtn').textContent='Play';clearInterval(animTimer);clearTimeout(completeAdvanceTimer);renderToken++;animFrame=0;trail=[];fixedIds=previewIds=completeIds=null;updateInputControlState();if($('animMode').value==='path')rebuildPath()};
-$('matrixPreset').onchange=()=>applyMatrixPreset($('matrixPreset').value);$('matrixAlphabet').addEventListener('input',()=>{$('matrixPreset').value='';});$('pathPreset').onchange=()=>applyPathPreset($('pathPreset').value);['pathExpr','tStart','tEnd','pathN','endpoint'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='pathExpr')$('pathPreset').value='';fixedIds=previewIds=completeIds=null;trail=[];rebuildPath();if($('animMode').value==='path')renderAnimationFrame()}));['fixedSubset','previewBudget'].forEach(id=>$(id).addEventListener('change',()=>{fixedIds=previewIds=null;if($('animMode').value==='path')renderAnimationFrame()}));$('pathRenderMode').onchange=()=>{renderToken++;clearTimeout(completeAdvanceTimer);if($('animMode').value==='path')renderAnimationFrame()};$('playBtn').onclick=()=>{if(!animPlaying&&$('animMode').value==='path'&&$('pathRenderMode').value==='complete'){let f;try{f=makeFamily()}catch(e){toast(e.message);return}const N=BigInt(Math.max(1,parseInt($('pathN').value)||1));maybeWarnAnimation(f.total,N,playAnimation,()=>{$('pathRenderMode').value='preview';playAnimation()})}else playAnimation()};$('prevFrame').onclick=()=>advanceFrame(-1);$('nextFrame').onclick=()=>advanceFrame(1);$('restartAnim').onclick=()=>{renderToken++;clearTimeout(completeAdvanceTimer);animFrame=0;trail=[];renderAnimationFrame()};
+$('matrixPreset').onchange=()=>applyMatrixPreset($('matrixPreset').value);$('matrixAlphabet').addEventListener('input',()=>{$('matrixPreset').value='';});$('pathPreset').onchange=()=>applyPathPreset($('pathPreset').value);['pathExpr','tStart','tEnd','pathN','endpoint'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='pathExpr')$('pathPreset').value='';fixedIds=previewIds=completeIds=null;trail=[];rebuildPath();if($('animMode').value==='path')renderAnimationFrame()}));['fixedSubset','previewBudget'].forEach(id=>$(id).addEventListener('change',()=>{fixedIds=previewIds=null;if($('animMode').value==='path')renderAnimationFrame()}));$('pathRenderMode').onchange=()=>{renderToken++;clearTimeout(completeAdvanceTimer);if($('animMode').value==='path')renderAnimationFrame()};$('playBtn').onclick=()=>{if(!animPlaying&&$('animMode').value==='path'&&$('pathRenderMode').value==='complete'){let f;try{f=makeFamily()}catch(e){toast(e.message);return}const N=BigInt(Math.max(1,parseInt($('pathN').value)||1));maybeWarnAnimation(targetCount(f),N,playAnimation,()=>{$('pathRenderMode').value='preview';playAnimation()})}else playAnimation()};$('prevFrame').onclick=()=>advanceFrame(-1);$('nextFrame').onclick=()=>advanceFrame(1);$('restartAnim').onclick=()=>{renderToken++;clearTimeout(completeAdvanceTimer);animFrame=0;trail=[];renderAnimationFrame()};
 $('exportPreset').onchange=()=>{const v=$('exportPreset').value;if(v){const [w,h]=v.split('x');$('exportW').value=w;$('exportH').value=h}};$('exportBtn').onclick=exportPNG;$('presentationBtn').onclick=()=>{document.body.classList.add('presentation');setTimeout(resizeAll,0)};
 function defaultBookmarkName(){const d=new Date(),date=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');return `Bookmark ${date} ${d.toLocaleTimeString()}`}
 $('saveBookmark').onclick=()=>{const n=$('bookmarkName').value.trim()||defaultBookmarkName(),b=loadBookmarks();b[n]=stateForBookmark();const localOk=persistBookmarks(b);loadBookmarks(n);$('bookmarkName').value=n;toast(localOk?'Bookmark saved':'Bookmark saved in page URL (browser storage unavailable)')};$('loadBookmark').onclick=()=>{const b=loadBookmarks(),n=$('bookmarkList').value;if(b[n]){applyBookmark(b[n]);toast(`Loaded ${n}`)}};$('deleteBookmark').onclick=()=>{const b=loadBookmarks(),n=$('bookmarkList').value;if(n){delete b[n];persistBookmarks(b);loadBookmarks();toast(`Deleted ${n}`)}};
@@ -899,7 +1054,7 @@ $('pinCompare').onclick=async()=>{const c=await compositeSnapshot();$('compareIm
 // the pointer has been idle briefly. In "fixed" mode, the preview subset remains the final view.
 let hoverPreviewRaf=0,hoverSettleTimer=null,interactionIdsCache=null;
 function updateInputControlState(){const pathOwnsZ=$('animMode').value==='path';$('hoverInput').disabled=pathOwnsZ;$('renderDrag').disabled=pathOwnsZ;$('hoverBehavior').disabled=pathOwnsZ||!$('hoverInput').checked;$('hoverBudget').disabled=pathOwnsZ||!$('hoverInput').checked;$('inputControlNote').textContent=pathOwnsZ?'Path animation currently controls z. Hover/drag input resumes when Animation mode is Static input.':$('hoverInput').checked?'Hover uses a stable seeded subset while moving.':''}
-function interactionIds(f){const n=Math.min(Number(f.total<=BigInt(Number.MAX_SAFE_INTEGER)?f.total:BigInt(Number.MAX_SAFE_INTEGER)),Math.max(1,Math.floor(Number($('hoverBudget').value)||1))),seed=Number($('seed').value)>>>0,key=`${f.generator}|${f.evaluation}|${f.total}|${seed}|${n}`;if(interactionIdsCache?.key===key&&interactionIdsCache.f===f)return interactionIdsCache.ids;const ids=sampledIds(f,n);interactionIdsCache={key,ids,f};return ids}
+function interactionIds(f){const n=Math.min(Number(targetCount(f)),Math.max(1,Math.floor(Number($('hoverBudget').value)||1))),seed=Number($('seed').value)>>>0,key=`${f.generator}|${f.evaluation}|${f.total}|${seed}|${n}`;if(interactionIdsCache?.key===key&&interactionIdsCache.f===f)return interactionIdsCache.ids;const ids=sampledIds(f,n);interactionIdsCache={key,ids,f};return ids}
 function renderMovingPreview(){if($('animMode').value!=='static')return;let f;try{f=makeFamily()}catch(e){toast(e.message,2000);return}const ids=interactionIds(f),z=getZ();renderDirectFrame(ids,f,z,'Interactive preview');interactionFrame={f,ids,zr:z.re,zi:z.im,token:renderToken};drawOverlays()}
 function queueMovingPreview(){renderToken++;if(!hoverPreviewRaf)hoverPreviewRaf=requestAnimationFrame(()=>{hoverPreviewRaf=0;renderMovingPreview()})}
 // Finish the seeded preview without discarding its cached plans or raster.
@@ -910,14 +1065,14 @@ function finishInteraction(warn=false){
   if($('animMode').value!=='static')return;
   if($('renderStyle').value!=='points'){requestRender(warn);return}
   let f;try{f=makeFamily()}catch(e){toast(e.message,2000);return}
-  const nBig=f.total;
+  const nBig=targetCount(f);
   if(warn&&warningNeeded(nBig)){maybeWarn(nBig,()=>finishInteraction(false),renderMovingPreview);return}
   const ids=interactionIds(f),cache=interactionIdsCache,z=getZ(),seed=Number($('seed').value)>>>0;
   const n=Number(nBig<=BigInt(Number.MAX_SAFE_INTEGER)?nBig:BigInt(Number.MAX_SAFE_INTEGER));
   const frame=interactionFrame;
   if(!frame||frame.f!==f||frame.ids!==ids||frame.zr!==z.re||frame.zi!==z.im||frame.token!==renderToken)
     renderMovingPreview();
-  renderToken++;paused=false;currentSampled=false;totalTarget=n;
+  renderToken++;paused=false;$('pauseBtn').textContent='Pause';currentSampled=nBig<f.total;totalTarget=n;
   processed=ids.length;renderedChunks=[ids];startTime=lastRateTime=now();lastRateCount=processed;
   if(processed<n){
     if(!cache.completion||cache.completion.n!==n){
@@ -931,7 +1086,7 @@ function finishInteraction(warn=false){
     if(activeBackend==='gpu')glr.draw(remaining,f,z,false);else cpuDraw(remaining,f,z,false);
     processed=n;
   }
-  updateHUD('Complete');
+  updateHUD(currentSampled?'Sample complete':'Complete');
   $('rateLine').textContent=processed===ids.length?'Preview reused · no additional points':`${(now()-startTime).toFixed(1)} ms main-thread completion work · preview reused`;
   if($('autoFit').checked&&!$('lockCamera').checked)fitCloudPreview(f,seed);
 }
