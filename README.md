@@ -59,14 +59,26 @@ The app is built for interactive exploration rather than one-off static plotting
 - path animation and degree sweeps;
 - realtime-preview, complete-frame, and fixed-subset animation modes;
 - deterministic seeded sampling;
-- point rendering and density rendering;
+- point rendering, density rendering, and screen-space Voronoi rendering;
 - many coloring modes based on coefficient, word, permutation, partition, or descriptor properties;
+- Voronoi layers with independently controllable sites, cell fills, and walls;
 - configurable complex-plane axis orientation;
 - optional axes, ticks, unit circle, path display, and input trail;
 - pan, zoom, fit, and locked-camera workflows;
 - output transforms such as `F(z)`, `1/F(z)`, `log F(z)`, and `F(z)/|F(z)|`;
 - bookmarks, comparison pinning, and PNG export;
-- a small mathematical expression language for paths, custom bases, recurrences, and matrix entries.
+- a small mathematical expression language for paths, custom bases, recurrences, and matrix entries;
+- built-in path presets, including several Lissajous curves and smoothly looping in-out spirals;
+- transformation/matrix presets aimed at visually rich Möbius and matrix-word experiments.
+
+
+## Voronoi visualization
+
+Voronoi mode treats the currently rendered complex outputs as sites and partitions the visible output plane according to the nearest rendered site. It is intended as a geometric reinterpretation of the same finite family rather than as a separate generator. Sampling therefore matters: a Voronoi diagram made from a subset is the diagram of that subset.
+
+The mode can independently show or hide the sites, cell fills, and cell walls. Cell colors can inherit the ordinary point-color mapping, use deterministic site-identity colors, use output geometry such as angle or radius, or use a proximity-aware palette that attempts to give neighboring cells visibly different colors. Wall rendering has separate thickness, opacity, and color strategies, including fixed colors, alternating colors, automatic contrast, and colors derived from the adjoining cells.
+
+The cell field is produced in screen space so it follows the current camera and is suitable for animation. The general family evaluator still determines the site locations; the Voronoi rasterization is a downstream visualization step. PNG export preserves the current Voronoi raster; custom export dimensions scale that raster rather than recomputing a new Voronoi field at the export resolution.
 
 ## Default example
 
@@ -90,7 +102,7 @@ The app has two broad execution paths:
 - a GPU-accelerated path for the unrestricted ordinary polynomial case where the browser can support it;
 - a general CPU double-precision path for the broader family/evaluator combinations.
 
-The UI reports the active backend. Sampling and fixed-subset modes are provided because many finite families grow exponentially or combinatorially, so exhaustive rendering can quickly become impractical even when individual function evaluations are cheap.
+The UI reports the active backend. Sampling and fixed-subset modes are provided because many finite families grow exponentially or combinatorially, so exhaustive rendering can quickly become impractical even when individual function evaluations are cheap. Voronoi mode evaluates its sites using the normal family machinery and then performs the nearest-site raster stage on the GPU when the browser supports the required WebGL2 floating-point render targets.
 
 ## Expression language
 
